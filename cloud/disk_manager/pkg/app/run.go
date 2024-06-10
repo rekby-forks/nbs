@@ -22,6 +22,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 	"github.com/ydb-platform/nbs/cloud/tasks/persistence"
 	tasks_storage "github.com/ydb-platform/nbs/cloud/tasks/storage"
+	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,6 +107,13 @@ func run(
 	mon.Start(ctx)
 
 	accounting.Init(mon.NewRegistry("accounting"))
+
+	logging.Info(ctx, "Initializing tracing")
+	ctx, err = tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize tracing: %v", err)
+		return err
+	}
 
 	creds := internal_auth.NewCredentials(ctx, config.GetAuthConfig())
 
