@@ -49,7 +49,7 @@ func InitOpentelemetryTracing(
 
 	resource := otel_resource.NewWithAttributes(
 		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("gayurgin_debug"),
+		semconv.ServiceNameKey.String(*config.ServiceName),
 		// TODO:_ hostname?
 	)
 

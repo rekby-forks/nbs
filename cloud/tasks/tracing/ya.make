@@ -2,7 +2,7 @@ GO_LIBRARY()
 
 SRCS(
     init.go
-    interface.go
+    trace_context.go
 )
 
 END()

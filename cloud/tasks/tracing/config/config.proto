@@ -7,4 +7,5 @@ option go_package = "github.com/ydb-platform/nbs/cloud/tasks/tracing/config";
 ////////////////////////////////////////////////////////////////////////////////
 
 message TracingConfig {
+    optional string ServiceName = 1 [default = "gayurgin_debug"];  // TODO:_ normal default. Do we need default here?
 }

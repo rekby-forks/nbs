@@ -52,7 +52,10 @@ func GetTracingHeaders(ctx context.Context) map[string]string {
 		"x-operation-id",
 		"x-request-id",
 		"x-request-uid",
+		"traceparent",
+		"tracestate",
 	}
+	// TODO:_ should we know about otel here? Maybe make function like GetOtelHeaders in tracing package?
 
 	for _, key := range allowedKeys {
 		vals := md.Get(key)
