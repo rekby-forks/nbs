@@ -80,6 +80,7 @@ func (c *client) CreateDisk(
 	req *disk_manager.CreateDiskRequest,
 ) (*disk_manager.Operation, error) {
 
+	fmt.Printf("CHECK client diskService: CreateDisk")
 	return c.diskServiceClient.Create(ctx, req)
 }
 

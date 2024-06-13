@@ -2,10 +2,12 @@ package facade
 
 import (
 	"context"
+	"fmt"
 
 	disk_manager "github.com/ydb-platform/nbs/cloud/disk_manager/api"
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/services/disks"
 	"github.com/ydb-platform/nbs/cloud/tasks"
+	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -21,6 +23,9 @@ func (s *diskService) Create(
 	ctx context.Context,
 	req *disk_manager.CreateDiskRequest,
 ) (*disk_manager.Operation, error) {
+
+	fmt.Printf("CHECK facade diskService: Create")
+	logging.Info(ctx, "CHECK client diskService: Create")
 
 	taskID, err := s.service.CreateDisk(ctx, req)
 	if err != nil {

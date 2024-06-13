@@ -193,6 +193,8 @@ func (i *interceptor) intercept(
 
 	ctx = logging.SetLogger(ctx, i.logger)
 
+	logging.Info(ctx, "CHECK intercept starting")
+
 	requestName, err := getRequestName(info.FullMethod)
 	if err != nil {
 		logging.Warn(ctx, "Failed to get request name: %v", err)
@@ -206,7 +208,9 @@ func (i *interceptor) intercept(
 	}
 
 	tracing.ExtractTraceContext(ctx) // TODO:_ we allready have grpc metadata in context here, don't we?
-	ctx, span := tracing.GetTracer(ctx).Start(ctx, requestName)
+	logging.Info(ctx, "CHECK intercept getting tracer")
+	ctx, span := tracing.GetTracer().Start(ctx, requestName)
+	logging.Info(ctx, "CHECK intercept got tracer")
 	defer span.End()
 
 	start := time.Now()
@@ -222,6 +226,7 @@ func (i *interceptor) intercept(
 
 	requestStats.onCount()
 	requestStats.recordDuration(time.Since(start))
+	logging.Info(ctx, "CHECK intercept finishing")
 	return resp, convertError(err)
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/types"
 	"github.com/ydb-platform/nbs/cloud/tasks"
 	task_errors "github.com/ydb-platform/nbs/cloud/tasks/errors"
+	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 	tasks_storage "github.com/ydb-platform/nbs/cloud/tasks/storage"
 )
 
@@ -310,6 +311,8 @@ func (s *service) CreateDisk(
 	ctx context.Context,
 	req *disk_manager.CreateDiskRequest,
 ) (string, error) {
+
+	logging.Info(ctx, "CHECK diskService: CreateDisk")
 
 	params, err := s.prepareCreateDiskParams(req)
 	if err != nil {

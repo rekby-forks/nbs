@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"fmt"
 
 	tracing_config "github.com/ydb-platform/nbs/cloud/tasks/tracing/config"
 
@@ -14,29 +15,38 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type tracerFieldKey struct{}
+// type tracerFieldKey struct{}
 
 const (
 	tracerName = "yc-disk-manager"
 )
 
-// TODO:_ put it in context?
+// func GetTracer(ctx context.Context) trace.Tracer {
+// 	return ctx.Value(tracerFieldKey{}).(trace.Tracer)
+// }
 
-func GetTracer(ctx context.Context) trace.Tracer {
-	return ctx.Value(tracerFieldKey{}).(trace.Tracer)
+var tracer trace.Tracer
+
+func GetTracer() trace.Tracer {
+	return tracer
 }
 
 func InitOpentelemetryTracing(
 	ctx context.Context,
 	config *tracing_config.TracingConfig,
-) (context.Context, error) {
+) error {
+
+	fmt.Println("InitOpentelemetryTracing starting")
 
 	// TODO:_ what if tracing disabled?
 
 	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
-		return ctx, err
+		fmt.Println("InitOpentelemetryTracing failed to create exporter")
+		return err
 	}
+
+	fmt.Println("InitOpentelemetryTracing created exporter")
 
 	// traceExporter, err := otlptracegrpc.New(
 	// 	ctx,
@@ -53,15 +63,22 @@ func InitOpentelemetryTracing(
 		// TODO:_ hostname?
 	)
 
+	fmt.Println("InitOpentelemetryTracing created resource")
+
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExporter), // TODO:_ timeout?
 		sdktrace.WithResource(resource),
 	)
+	fmt.Println("InitOpentelemetryTracing created trace provider")
 	otel.SetTracerProvider(tracerProvider)
+	fmt.Println("InitOpentelemetryTracing set trace provider")
 
-	ctx = context.WithValue(ctx, tracerFieldKey{}, otel.Tracer(tracerName))
+	// ctx = context.WithValue(ctx, tracerFieldKey{}, otel.Tracer(tracerName))
+	tracer = otel.Tracer(tracerName)
+	fmt.Println("InitOpentelemetryTracing created tracer")
 
 	otel.SetTextMapPropagator(propagation.TraceContext{})
+	fmt.Println("InitOpentelemetryTracing set propagator, finishing")
 
-	return ctx, err
+	return nil
 }
