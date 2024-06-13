@@ -66,7 +66,8 @@ func (s *scheduler) ScheduleZonalTask(
 	ctx = withComponentLoggingField(ctx)
 	logging.Info(ctx, "scheduling task %v", taskType)
 
-	ctx, _ = tracing.GetTracer(ctx).Start(ctx, taskType)
+	// TODO:_ what if already scheduled ???
+	ctx, _ = tracing.GetTracer().Start(ctx, taskType)
 	ctx = tracing.InjectTraceContext(ctx)
 	// TODO:_ end the span if failed to save task to db !!!
 

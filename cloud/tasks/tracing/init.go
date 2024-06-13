@@ -74,6 +74,7 @@ func InitOpentelemetryTracing(
 	fmt.Println("InitOpentelemetryTracing set trace provider")
 
 	// ctx = context.WithValue(ctx, tracerFieldKey{}, otel.Tracer(tracerName))
+	// TODO:_ should I create separate tracer for each operation?
 	tracer = otel.Tracer(tracerName)
 	fmt.Println("InitOpentelemetryTracing created tracer")
 

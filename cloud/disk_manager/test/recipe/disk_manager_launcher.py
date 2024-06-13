@@ -186,6 +186,9 @@ PlacementGroupConfig: <
     DeletedPlacementGroupExpirationTimeout: "1s"
     ClearDeletedPlacementGroupsTaskScheduleInterval: "2s"
 >
+TracingConfig: <
+    ServiceName: "gayurgin_debug"
+>
 """
 
 
