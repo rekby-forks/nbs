@@ -586,6 +586,8 @@ public:
 
     ui32 GetVolumeHistoryCleanupItemCount() const;
     TVector<TString> GetDestructionAllowedOnlyForDisksWithIdPrefixes() const;
+
+    [[nodiscard]] bool GetDefaultEncryptionEnabled() const;
 };
 
 ui64 GetAllocationUnit(
