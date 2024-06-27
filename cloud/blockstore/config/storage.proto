@@ -1009,5 +1009,5 @@ message TStorageServiceConfig
     optional bool ResyncRangeAfterScrubbing = 376;
 
     // Enable default enctyption for NRD/Mirrored disks.
-    optional bool DefaultEncryptionEnabled = 377;
+    optional bool DefaultEncryptionForNonReplicatedDisksEnabled = 377;
 }
