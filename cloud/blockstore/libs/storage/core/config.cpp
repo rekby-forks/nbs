@@ -14,6 +14,7 @@
 namespace NCloud::NBlockStore::NStorage {
 
 using namespace NKikimr;
+using namespace NKikimrConsole;
 
 namespace {
 
@@ -114,6 +115,7 @@ TDuration MSeconds(ui32 value)
     xxx(ServiceSelfPingInterval,                    TDuration,  MSeconds(10)  )\
                                                                                \
     xxx(DestructionAllowedOnlyForDisksWithIdPrefixes, TVector<TString>, {}    )\
+    xxx(ConfigDispatcherTrackedConfigs,             TVector<ui32>,      {}    )\
 // BLOCKSTORE_STORAGE_CONFIG_RO
 
 #define BLOCKSTORE_STORAGE_CONFIG_RW(xxx)                                      \
@@ -555,6 +557,23 @@ TTarget ConvertValue(const TSource& value)
     return static_cast<TTarget>(value);
 }
 
+template <typename TTarget, typename TSource>
+TTarget ConvertValue(const google::protobuf::RepeatedField<TSource>& value)
+requires
+    std::is_enum_v<typename TTarget::value_type> &&
+    std::is_same_v<TTarget, TVector<typename TTarget::value_type>>
+{
+    TTarget result(Reserve(value.size()));
+    std::transform(
+        value.begin(),
+        value.end(),
+        std::back_inserter(result),
+        [] (TSource value) {
+            return static_cast<typename TTarget::value_type>(value);
+        });
+    return result;
+}
+
 template <>
 TDuration ConvertValue<TDuration, ui64>(const ui64& value)
 {
@@ -582,6 +601,12 @@ bool IsEmpty(const T& t)
 
 template <typename T>
 bool IsEmpty(const google::protobuf::RepeatedPtrField<T>& value)
+{
+    return value.empty();
+}
+
+template <typename T>
+bool IsEmpty(const google::protobuf::RepeatedField<T>& value)
 {
     return value.empty();
 }
