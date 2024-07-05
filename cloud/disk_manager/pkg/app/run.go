@@ -110,11 +110,13 @@ func run(
 	accounting.Init(mon.NewRegistry("accounting"))
 
 	logging.Info(ctx, "Initializing tracing")
-	err = tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
+	// XXXXXX tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
+	tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize tracing: %v", err)
 		return err
 	}
+	defer tracingShutdown(ctx) // TODO:_ how to use ctx here?
 
 	creds := internal_auth.NewCredentials(ctx, config.GetAuthConfig())
 

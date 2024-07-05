@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	tracing_config "github.com/ydb-platform/nbs/cloud/tasks/tracing/config"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
@@ -33,8 +31,8 @@ func GetTracer() trace.Tracer {
 
 func InitOpentelemetryTracing(
 	ctx context.Context,
-	config *tracing_config.TracingConfig,
-) error {
+	// XXXXX config *tracing_config.TracingConfig,
+) (shutdown func(context.Context) error, err error) {
 
 	fmt.Println("InitOpentelemetryTracing starting")
 
@@ -43,7 +41,7 @@ func InitOpentelemetryTracing(
 	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
 		fmt.Println("InitOpentelemetryTracing failed to create exporter")
-		return err
+		return nil, err
 	}
 
 	fmt.Println("InitOpentelemetryTracing created exporter")
@@ -57,9 +55,11 @@ func InitOpentelemetryTracing(
 	// 	return err
 	// }
 
+	// XXXXXX serviceName := *config.ServiceName
+	// XXXXXX fmt.Printf("InitOpentelemetryTracing config.ServiceName: %v\n", serviceName)
 	resource := otel_resource.NewWithAttributes(
 		semconv.SchemaURL,
-		semconv.ServiceNameKey.String(*config.ServiceName),
+		semconv.ServiceNameKey.String("aaaaaa_service_name"),
 		// TODO:_ hostname?
 	)
 
@@ -81,5 +81,5 @@ func InitOpentelemetryTracing(
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	fmt.Println("InitOpentelemetryTracing set propagator, finishing")
 
-	return nil
+	return tracerProvider.Shutdown, nil
 }
