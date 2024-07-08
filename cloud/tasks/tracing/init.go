@@ -54,6 +54,7 @@ func InitOpentelemetryTracing(
 
 	// TODO:_ what if tracing disabled?
 
+	// traceExporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint("localhost:7881"))
 	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	// traceExporter, err := NewGRPCTraceExporter(ctx)
 	if err != nil {

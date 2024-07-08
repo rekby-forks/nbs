@@ -558,10 +558,6 @@ func lockAndExecuteTask(
 	logging.Info(ctx, "CHECK lockAndExecuteTask started span")
 	defer span.End()
 
-	// TODO:_ remove it
-	runCtx, spanFoo := tracing.GetTracer().Start(runCtx, spanName+"_Foo")
-	defer spanFoo.End()
-
 	execCtx := newExecutionContext(task, taskStorage, taskState)
 
 	pingCtx, cancelPing := context.WithCancel(ctx)

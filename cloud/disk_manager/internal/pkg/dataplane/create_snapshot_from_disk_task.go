@@ -12,7 +12,6 @@ import (
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/dataplane/snapshot"
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/dataplane/snapshot/storage"
 	"github.com/ydb-platform/nbs/cloud/tasks"
-	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,9 +105,6 @@ func (t *createSnapshotFromDiskTask) run(
 	ctx context.Context,
 	execCtx tasks.ExecutionContext,
 ) error {
-
-	ctx, span := tracing.GetTracer().Start(ctx, "AAAAAAA_createSnapshotFromDiskTask")
-	defer span.End()
 
 	selfTaskID := execCtx.GetTaskID()
 
