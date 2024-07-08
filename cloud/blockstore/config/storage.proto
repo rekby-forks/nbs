@@ -4,8 +4,6 @@ package NCloud.NBlockStore.NProto;
 
 import "cloud/storage/core/protos/authorization_mode.proto";
 
-import "contrib/ydb/core/protos/console_config.proto";
-
 option go_package = "github.com/ydb-platform/nbs/cloud/blockstore/config";
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1010,5 +1008,5 @@ message TStorageServiceConfig
     // Resync range, if scrubbing found a mismatch.
     optional bool ResyncRangeAfterScrubbing = 376;
 
-    repeated string ConfigDispatcherTrackedConfigs = 375;
+    repeated string ConfigDispatcherTrackedConfigs = 377;
 }

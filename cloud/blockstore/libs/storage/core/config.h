@@ -589,7 +589,7 @@ public:
     ui32 GetVolumeHistoryCleanupItemCount() const;
     TString GetDestructionAllowedOnlyForDisksWithIdPrefix() const;
 
-    TVector<ui32> GetConfigDispatcherTrackedConfigs() const;
+    TVector<TString> GetConfigDispatcherTrackedConfigs() const;
 };
 
 ui64 GetAllocationUnit(
