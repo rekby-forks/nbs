@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	tracing_config "github.com/ydb-platform/nbs/cloud/tasks/tracing/config"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
-	otel_resource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -29,16 +29,33 @@ func GetTracer() trace.Tracer {
 	return tracer
 }
 
+// func NewStdoutTraceExporter() (*otlptrace.Exporter, error) {
+// 	return stdouttrace.New(stdouttrace.WithPrettyPrint())
+// }
+
+// func NewGRPCTraceExporter(ctx context.Context) (*otlptrace.Exporter, error) {
+// 	return otlptracegrpc.New(
+// 		ctx,
+// 		otlptracegrpc.WithEndpoint("localhost:7881"),
+// 		otlptracegrpc.WithInsecure(),
+// 	)
+// }
+
+// func NewHTTPTraceExporter() (*otlptrace.Exporter, error) {
+// }
+
 func InitOpentelemetryTracing(
 	ctx context.Context,
-	// XXXXX config *tracing_config.TracingConfig,
+	config *tracing_config.TracingConfig,
 ) (shutdown func(context.Context) error, err error) {
 
 	fmt.Println("InitOpentelemetryTracing starting")
+	fmt.Println("InitOpentelemetryTracing Config: %v", config)
 
 	// TODO:_ what if tracing disabled?
 
 	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	// traceExporter, err := NewGRPCTraceExporter(ctx)
 	if err != nil {
 		fmt.Println("InitOpentelemetryTracing failed to create exporter")
 		return nil, err
@@ -46,28 +63,19 @@ func InitOpentelemetryTracing(
 
 	fmt.Println("InitOpentelemetryTracing created exporter")
 
-	// traceExporter, err := otlptracegrpc.New(
-	// 	ctx,
-	// 	otlptracegrpc.WithEndpoint("localhost:7881"),
-	// 	otlptracegrpc.WithInsecure(),
-	// )
-	// if err != nil {
-	// 	return err
-	// }
-
 	// XXXXXX serviceName := *config.ServiceName
 	// XXXXXX fmt.Printf("InitOpentelemetryTracing config.ServiceName: %v\n", serviceName)
-	resource := otel_resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("aaaaaa_service_name"),
-		// TODO:_ hostname?
-	)
+	// resource := otel_resource.NewWithAttributes(
+	// 	semconv.SchemaURL,
+	// 	semconv.ServiceNameKey.String("aaaaaa_service_name"),
+	// 	// TODO:_ hostname?
+	// )
 
 	fmt.Println("InitOpentelemetryTracing created resource")
 
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExporter), // TODO:_ timeout?
-		sdktrace.WithResource(resource),
+		// sdktrace.WithResource(resource),
 	)
 	fmt.Println("InitOpentelemetryTracing created trace provider")
 	otel.SetTracerProvider(tracerProvider)

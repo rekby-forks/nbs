@@ -11,6 +11,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks/errors"
 	"github.com/ydb-platform/nbs/cloud/tasks/headers"
 	"github.com/ydb-platform/nbs/cloud/tasks/logging"
+	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
 	"google.golang.org/grpc"
 	grpc_codes "google.golang.org/grpc/codes"
 	grpc_status "google.golang.org/grpc/status"
@@ -206,11 +207,11 @@ func (i *interceptor) intercept(
 		return nil, err
 	}
 
-	// HMM tracing.ExtractTraceContext(ctx) // TODO:_ we already have grpc metadata in context here, don't we?
-	// HMM2 logging.Info(ctx, "CHECK intercept getting tracer")
-	// HMM2 ctx, span := tracing.GetTracer().Start(ctx, requestName)
-	// HMM2 logging.Info(ctx, "CHECK intercept got tracer")
-	// HMM2 defer span.End()
+	tracing.ExtractTraceContext(ctx) // TODO:_ we already have grpc metadata in context here, don't we?
+	logging.Info(ctx, "CHECK intercept starting span")
+	ctx, span := tracing.GetTracer().Start(ctx, requestName)
+	logging.Info(ctx, "CHECK intercept started span")
+	defer span.End()
 
 	start := time.Now()
 

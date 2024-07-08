@@ -17,6 +17,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks"
 	"github.com/ydb-platform/nbs/cloud/tasks/errors"
 	"github.com/ydb-platform/nbs/cloud/tasks/headers"
+	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,6 +100,9 @@ func (t *createImageFromDiskTask) run(
 	if err != nil {
 		return err
 	}
+
+	ctx, span := tracing.GetTracer().Start(ctx, "AAAAAAA_createImageFromDiskTask")
+	defer span.End()
 
 	taskID, err := t.scheduler.ScheduleZonalTask(
 		headers.SetIncomingIdempotencyKey(ctx, selfTaskID+"_run"),

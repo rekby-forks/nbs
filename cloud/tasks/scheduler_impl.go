@@ -16,6 +16,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks/metrics"
 	"github.com/ydb-platform/nbs/cloud/tasks/operation"
 	tasks_storage "github.com/ydb-platform/nbs/cloud/tasks/storage"
+	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
 	grpc_codes "google.golang.org/grpc/codes"
 	grpc_status "google.golang.org/grpc/status"
 )
@@ -67,7 +68,7 @@ func (s *scheduler) ScheduleZonalTask(
 
 	// TODO:_ what if already scheduled ???
 	// HMM ctx, _ = tracing.GetTracer().Start(ctx, taskType)
-	// HMM ctx = tracing.InjectTraceContext(ctx)
+	ctx = tracing.InjectTraceContext(ctx)
 	// TODO:_ end the span if failed to save task to db !!!
 
 	marshalledRequest, err := proto.Marshal(request)

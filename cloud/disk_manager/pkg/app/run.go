@@ -110,8 +110,8 @@ func run(
 	accounting.Init(mon.NewRegistry("accounting"))
 
 	logging.Info(ctx, "Initializing tracing")
-	// XXXXXX tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
-	tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
+	tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
+	// tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize tracing: %v", err)
 		return err

@@ -10,7 +10,6 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 	"github.com/ydb-platform/nbs/cloud/tasks/persistence"
 	"github.com/ydb-platform/nbs/cloud/tasks/storage"
-	"go.opentelemetry.io/otel/trace"
 	grpc_codes "google.golang.org/grpc/codes"
 )
 
@@ -202,8 +201,8 @@ func (c *executionContext) updateStateWithCallback(
 
 	if newTaskState.Status == storage.TaskStatusFinished || newTaskState.Status == storage.TaskStatusCancelled {
 		// TODO:_ do not import otel stuff here?
-		span := trace.SpanFromContext(ctx)
-		span.End()
+		// HMM span := trace.SpanFromContext(ctx)
+		// HMM span.End()
 	}
 
 	c.taskState = newTaskState
