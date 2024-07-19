@@ -26,6 +26,7 @@ namespace NMonitoring {
                 opts.SetHost(host);
             }
             opts.SetClientTimeout(TDuration::Minutes(1));
+            opts.EnableReusePort(true);
             opts.EnableCompression(true);
             opts.SetThreads(threads);
             opts.SetMaxConnections(std::max<ui32>(100, threads));
