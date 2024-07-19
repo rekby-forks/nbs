@@ -43,6 +43,7 @@ namespace NActors {
             SetNonBlock(*Listener);
             Listener->SetSendBufferSize(ProxyCommonCtx->Settings.GetSendBufferSize()); // TODO(alexvru): WTF?
             SetSockOpt(*Listener, SOL_SOCKET, SO_REUSEADDR, 1);
+            SetSockOpt(*Listener, SOL_SOCKET, SO_REUSEPORT, 1);
             if (addr.GetFamily() == AF_INET6) {
                 SetSockOpt(*Listener, IPPROTO_IPV6, IPV6_V6ONLY, 0);
             }
