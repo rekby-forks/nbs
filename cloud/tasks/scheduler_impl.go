@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -68,6 +69,7 @@ func (s *scheduler) ScheduleZonalTask(
 
 	// TODO:_ what if already scheduled ???
 	// HMM ctx, _ = tracing.GetTracer().Start(ctx, taskType)
+	fmt.Println("CHECK lockAndExecuteTask Injecting Trace Context")
 	ctx = tracing.InjectTraceContext(ctx)
 	// TODO:_ end the span if failed to save task to db !!!
 

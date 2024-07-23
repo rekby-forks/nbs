@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -83,7 +84,6 @@ func run(
 	ctx = logging.SetLogger(ctx, logger)
 
 	logging.Info(ctx, "Locking process memory")
-	logging.Debug(ctx, "CHECK debug")
 
 	if config.GetLockProcessMemory() {
 		err := util.LockProcessMemory()
@@ -109,14 +109,18 @@ func run(
 
 	accounting.Init(mon.NewRegistry("accounting"))
 
-	logging.Info(ctx, "Initializing tracing")
+	logging.Info(ctx, "CHECK Initializing tracing")
 	tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
 	// tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
 	if err != nil {
-		logging.Error(ctx, "Failed to initialize tracing: %v", err)
+		logging.Error(ctx, "CHECK Failed to initialize tracing: %v", err)
 		return err
 	}
-	defer tracingShutdown(ctx) // TODO:_ how to use ctx here?
+	// TODO:_ remove func
+	defer func() {
+		fmt.Println("CHECK Shutting down tracing")
+		tracingShutdown(ctx) // TODO:_ how to use ctx here?
+	}()
 
 	creds := internal_auth.NewCredentials(ctx, config.GetAuthConfig())
 

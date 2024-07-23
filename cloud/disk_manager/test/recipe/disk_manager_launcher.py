@@ -294,6 +294,9 @@ DataplaneConfig: <
     SnapshotCollectionInflightLimit: 10
     ProxyOverlayDiskIdPrefix: "{proxy_overlay_disk_id_prefix}"
 >
+TracingConfig: <
+    ServiceName: "gayurgin_debug"
+>
 """
 
 SERVICE_NAME = "disk_manager"

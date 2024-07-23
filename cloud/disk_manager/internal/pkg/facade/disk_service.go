@@ -24,8 +24,8 @@ func (s *diskService) Create(
 	req *disk_manager.CreateDiskRequest,
 ) (*disk_manager.Operation, error) {
 
-	fmt.Printf("CHECK facade diskService: Create")
-	logging.Info(ctx, "CHECK client diskService: Create")
+	fmt.Println("CHECK facade diskService: Create AAA")
+	logging.Info(ctx, "CHECK facade diskService: Create BBB")
 
 	taskID, err := s.service.CreateDisk(ctx, req)
 	if err != nil {

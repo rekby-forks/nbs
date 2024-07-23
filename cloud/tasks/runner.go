@@ -370,6 +370,7 @@ func (r *runnerForCancel) executeTask(
 		taskID,
 	)
 
+	logging.Info(ctx, "CHECK cancelling task %v", execCtx.GetTaskID())
 	err := task.Cancel(
 		logging.WithTaskID(
 			logging.WithComponent(ctx, logging.ComponentTask),
@@ -550,6 +551,7 @@ func lockAndExecuteTask(
 	// All derived tasks should be pinned to the same storage folder.
 	runCtx = setStorageFolder(runCtx, taskState.StorageFolder)
 	runCtx = logging.WithCommonFields(runCtx)
+	logging.Info(ctx, "CHECK lockAndExecuteTask Extracting Trace Context")
 	runCtx = tracing.ExtractTraceContext(runCtx)
 
 	logging.Info(ctx, "CHECK lockAndExecuteTask starting span for task %v", taskInfo)
