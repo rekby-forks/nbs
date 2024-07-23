@@ -12,6 +12,8 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks/metrics"
 	"github.com/ydb-platform/nbs/cloud/tasks/storage"
 	"github.com/ydb-platform/nbs/cloud/tasks/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +373,10 @@ func (r *runnerForCancel) executeTask(
 	)
 
 	logging.Info(ctx, "CHECK cancelling task %v", execCtx.GetTaskID())
+	trace.SpanFromContext(ctx).AddEvent(
+		"Cancelling task",
+		trace.WithAttributes(attribute.String("Task ID", execCtx.GetTaskID())),
+	)
 	err := task.Cancel(
 		logging.WithTaskID(
 			logging.WithComponent(ctx, logging.ComponentTask),
@@ -558,7 +564,11 @@ func lockAndExecuteTask(
 	spanName := fmt.Sprintf("%v_%v_%v", taskInfo.ID, taskInfo.GenerationID, taskInfo.TaskType)
 	runCtx, span := tracing.GetTracer().Start(runCtx, spanName)
 	logging.Info(ctx, "CHECK lockAndExecuteTask started span")
-	defer span.End()
+	// TODO:_ remove func
+	defer func() {
+		fmt.Printf("CHECK ending span %v\n", spanName)
+		span.End()
+	}()
 
 	execCtx := newExecutionContext(task, taskStorage, taskState)
 

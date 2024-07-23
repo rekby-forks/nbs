@@ -9,6 +9,7 @@ import (
 	tracing_config "github.com/ydb-platform/nbs/cloud/tasks/tracing/config"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	otel_resource "go.opentelemetry.io/otel/sdk/resource"
@@ -86,8 +87,8 @@ func InitOpentelemetryTracing(
 	resource := otel_resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String(serviceName),
-		semconv.HostNameKey.String(hostname),
-		// TODO:_ hostname?
+		semconv.HostNameKey.String(hostname), // TODO:_ hostname?
+		attribute.String("generation", "CCC"),
 	)
 
 	fmt.Println("CHECK InitOpentelemetryTracing created resource")
