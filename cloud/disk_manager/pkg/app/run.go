@@ -109,18 +109,20 @@ func run(
 
 	accounting.Init(mon.NewRegistry("accounting"))
 
-	logging.Info(ctx, "CHECK Initializing tracing")
-	tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
-	// tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
-	if err != nil {
-		logging.Error(ctx, "CHECK Failed to initialize tracing: %v", err)
-		return err
+	if config.TracingConfig != nil {
+		logging.Info(ctx, "CHECK Initializing tracing")
+		tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
+		// tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx)
+		if err != nil {
+			logging.Error(ctx, "CHECK Failed to initialize tracing: %v", err)
+			return err
+		}
+		// TODO:_ remove func
+		defer func() {
+			fmt.Println("CHECK Shutting down tracing")
+			tracingShutdown(ctx) // TODO:_ how to use ctx here?
+		}()
 	}
-	// TODO:_ remove func
-	defer func() {
-		fmt.Println("CHECK Shutting down tracing")
-		tracingShutdown(ctx) // TODO:_ how to use ctx here?
-	}()
 
 	creds := internal_auth.NewCredentials(ctx, config.GetAuthConfig())
 

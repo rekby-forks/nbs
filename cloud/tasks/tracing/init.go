@@ -18,21 +18,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// type tracerFieldKey struct{}
-
 const (
 	tracerName = "yc-disk-manager"
 )
 
-// func GetTracer(ctx context.Context) trace.Tracer {
-// 	return ctx.Value(tracerFieldKey{}).(trace.Tracer)
-// }
+// TODO:_ do we need to get tracer from out of this package?
 
-var tracer trace.Tracer
+func StartSpan(
+	ctx context.Context,
+	spanName string,
+	opts ...trace.SpanStartOption,
+) (context.Context, trace.Span) {
 
-func GetTracer() trace.Tracer {
-	return tracer
+	return otel.Tracer(tracerName).Start(ctx, spanName, opts...)
 }
+
+// func GetTracer() trace.Tracer {
+// 	return tracer
+// }
 
 // func NewStdoutTraceExporter() (*otlptrace.Exporter, error) {
 // 	return stdouttrace.New(stdouttrace.WithPrettyPrint())
@@ -56,7 +59,7 @@ func InitOpentelemetryTracing(
 
 	fmt.Println("CHECK InitOpentelemetryTracing starting")
 	fmt.Printf("CHECK InitOpentelemetryTracing Config: %v\n", config)
-	goLogPings(ctx)
+	// goLogPings(ctx)
 
 	// TODO:_ what if tracing disabled?
 
@@ -103,7 +106,6 @@ func InitOpentelemetryTracing(
 
 	// ctx = context.WithValue(ctx, tracerFieldKey{}, otel.Tracer(tracerName))
 	// TODO:_ should I create separate tracer for each operation?
-	tracer = otel.Tracer(tracerName)
 	fmt.Println("CHECK InitOpentelemetryTracing created tracer")
 
 	otel.SetTextMapPropagator(propagation.TraceContext{})

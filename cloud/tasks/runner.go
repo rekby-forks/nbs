@@ -562,7 +562,7 @@ func lockAndExecuteTask(
 
 	logging.Info(ctx, "CHECK lockAndExecuteTask starting span for task %v", taskInfo)
 	spanName := fmt.Sprintf("%v_%v_%v", taskInfo.ID, taskInfo.GenerationID, taskInfo.TaskType)
-	runCtx, span := tracing.GetTracer().Start(runCtx, spanName)
+	runCtx, span := tracing.StartSpan(runCtx, spanName)
 	logging.Info(ctx, "CHECK lockAndExecuteTask started span")
 	// TODO:_ remove func
 	defer func() {

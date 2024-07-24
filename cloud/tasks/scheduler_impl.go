@@ -68,7 +68,7 @@ func (s *scheduler) ScheduleZonalTask(
 	logging.Info(ctx, "scheduling task %v", taskType)
 
 	// TODO:_ what if already scheduled ???
-	// HMM ctx, _ = tracing.GetTracer().Start(ctx, taskType)
+	// HMM ctx, _ = tracing.StartSpan(ctx, taskType)
 	fmt.Println("CHECK lockAndExecuteTask Injecting Trace Context")
 	ctx = tracing.InjectTraceContext(ctx)
 	// TODO:_ end the span if failed to save task to db !!!
