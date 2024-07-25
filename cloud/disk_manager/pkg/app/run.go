@@ -109,6 +109,7 @@ func run(
 
 	accounting.Init(mon.NewRegistry("accounting"))
 
+	logging.Info(ctx, "CHECK checking whether initialize tracing")
 	if config.TracingConfig != nil {
 		logging.Info(ctx, "CHECK Initializing tracing")
 		tracingShutdown, err := tracing.InitOpentelemetryTracing(ctx, config.TracingConfig)
@@ -122,6 +123,8 @@ func run(
 			fmt.Println("CHECK Shutting down tracing")
 			tracingShutdown(ctx) // TODO:_ how to use ctx here?
 		}()
+	} else { // TODO:_ remove else
+		logging.Info(ctx, "CHECK no config, will not initialize tracing")
 	}
 
 	creds := internal_auth.NewCredentials(ctx, config.GetAuthConfig())
