@@ -14,7 +14,6 @@
 namespace NCloud::NBlockStore::NStorage {
 
 using namespace NKikimr;
-using namespace NKikimrConsole;
 
 namespace {
 
@@ -22,10 +21,6 @@ namespace {
 
 constexpr auto PreemptedVolumesFile =
     "/var/log/nbs-server/nbs-preempted-volumes.json";
-
-////////////////////////////////////////////////////////////////////////////////
-
-using TConfigItem = NKikimrConsole::TConfigItem::EKind;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -119,7 +114,9 @@ TDuration MSeconds(ui32 value)
     xxx(ServiceSelfPingInterval,                    TDuration,  MSeconds(10)  )\
                                                                                \
     xxx(DestructionAllowedOnlyForDisksWithIdPrefixes, TVector<TString>, {}    )\
-    xxx(ConfigDispatcherTrackedConfigs,             TVector<TString>,   {}    )\
+    xxx(YdbConfigDispatcherSettings,                                           \
+        NCloud::NProto::TYdbConfigDispatcherSettings,                          \
+        {}                                                                    )\
 // BLOCKSTORE_STORAGE_CONFIG_RO
 
 #define BLOCKSTORE_STORAGE_CONFIG_RW(xxx)                                      \
@@ -562,23 +559,6 @@ TTarget ConvertValue(const TSource& value)
 }
 
 template <>
-TVector<TConfigItem> ConvertValue<TVector<TConfigItem>>(
-    const google::protobuf::RepeatedPtrField<TString>& value)
-{
-    TVector<TConfigItem> result(Reserve(value.size()));
-    std::transform(
-        value.begin(),
-        value.end(),
-        std::back_inserter(result),
-        [] (const TString& value) {
-            TConfigItem val;
-            NKikimrConsole::TConfigItem::EKind_Parse(value, &val);
-            return val;
-        });
-    return result;
-}
-
-template <>
 TDuration ConvertValue<TDuration, ui64>(const ui64& value)
 {
     return TDuration::MilliSeconds(value);
@@ -601,6 +581,12 @@ template <typename T>
 bool IsEmpty(const T& t)
 {
     return !t;
+}
+
+template <>
+bool IsEmpty(const NCloud::NProto::TYdbConfigDispatcherSettings& value)
+{
+    return value.HasAllowList() || value.HasDenyList();
 }
 
 template <typename T>

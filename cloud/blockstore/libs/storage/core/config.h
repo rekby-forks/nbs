@@ -585,9 +585,9 @@ public:
     bool GetOptimizeVoidBuffersTransferForReadsEnabled() const;
 
     ui32 GetVolumeHistoryCleanupItemCount() const;
-    TString GetDestructionAllowedOnlyForDisksWithIdPrefix() const;
+    TVector<TString> GetDestructionAllowedOnlyForDisksWithIdPrefixes() const;
 
-    TVector<TString> GetConfigDispatcherTrackedConfigs() const;
+    NCloud::NProto::TYdbConfigDispatcherSettings GetYdbConfigDispatcherSettings() const;
 };
 
 ui64 GetAllocationUnit(
