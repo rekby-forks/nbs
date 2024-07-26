@@ -8,6 +8,7 @@ ENDIF()
 RECURSE(
     client
     cms
+    config-dispatcher
     external_endpoint
     fio
     functional
