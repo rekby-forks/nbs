@@ -207,7 +207,7 @@ func (i *interceptor) intercept(
 		return nil, err
 	}
 
-	tracing.ExtractTraceContext(ctx) // TODO:_ we already have grpc metadata in context here, don't we?
+	ctx = tracing.ExtractTraceContext(ctx) // TODO:_ we already have grpc metadata in context here, don't we?
 	logging.Info(ctx, "CHECK intercept starting span")
 	ctx, span := tracing.StartSpan(ctx, requestName)
 	logging.Info(ctx, "CHECK intercept started span")
