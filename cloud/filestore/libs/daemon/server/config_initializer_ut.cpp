@@ -1,6 +1,10 @@
 #include "config_initializer.h"
 #include "options.h"
 
+#include <cloud/filestore/libs/diagnostics/config.h>
+#include <cloud/filestore/libs/server/config.h>
+#include <cloud/filestore/libs/storage/core/config.h>
+
 #include <library/cpp/monlib/dynamic_counters/counters.h>
 #include <library/cpp/protobuf/util/pb_io.h>
 #include <library/cpp/testing/unittest/registar.h>
@@ -89,6 +93,62 @@ Y_UNIT_TEST_SUITE(TConfigInitializerTest)
             "UNKNOWN_COMPONENT",
             logConfig.GetEntry(1).GetComponent());
         UNIT_ASSERT_VALUES_EQUAL(6, logConfig.GetEntry(1).GetLevel());
+    }
+
+    Y_UNIT_TEST(ShouldApplyConfigsFromCms)
+    {
+        auto options = CreateOptions();
+
+        auto ci = TConfigInitializerServer(std::move(options));
+
+        NKikimrConfig::TAppConfig appConfig;
+
+        auto* storageConfig = appConfig.AddNamedConfigs();
+        storageConfig->SetName("StorageConfig");
+        storageConfig->SetConfig(R"(
+            NodeType: "xyz"
+        )");
+
+        auto* diagConfig = appConfig.AddNamedConfigs();
+        diagConfig->SetName("DiagnosticsConfig");
+        diagConfig->SetConfig(R"(
+            BastionNameSuffix: "xyz"
+        )");
+
+        auto* featuresConfig = appConfig.AddNamedConfigs();
+        featuresConfig->SetName("FeaturesConfig");
+        featuresConfig->SetConfig(R"(
+            Features {
+                Name: "xyz"
+                Value: "None"
+            }
+        )");
+
+        auto* serverAppConfig = appConfig.AddNamedConfigs();
+        serverAppConfig->SetName("ServerAppConfig");
+        serverAppConfig->SetConfig(R"(
+            ServerConfig {
+                Host: "xyz.cloud"
+            }
+        )");
+
+        ci.ApplyCustomCMSConfigs(appConfig);
+/*
+        UNIT_ASSERT_VALUES_EQUAL(
+            "xyz",
+            ci.StorageConfig->GetNodeType());
+*/
+        UNIT_ASSERT_VALUES_EQUAL(
+            "xyz",
+            ci.DiagnosticsConfig->GetBastionNameSuffix());
+
+        UNIT_ASSERT_VALUES_EQUAL(
+            "None",
+            ci.FeaturesConfig->GetFeatureValue("", "", "", "xyz"));
+
+        UNIT_ASSERT_VALUES_EQUAL(
+            "xyz.cloud",
+            ci.ServerConfig->GetHost());
     }
 }
 
