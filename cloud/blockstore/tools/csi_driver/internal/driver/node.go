@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"syscall"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	nbsapi "github.com/ydb-platform/nbs/cloud/blockstore/public/api/protos"
@@ -77,6 +78,13 @@ var podModeCapabilities = []*csi.NodeServiceCapability{
 			},
 		},
 	},
+	{
+		Type: &csi.NodeServiceCapability_Rpc{
+			Rpc: &csi.NodeServiceCapability_RPC{
+				Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+			},
+		},
+	},
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -94,6 +102,7 @@ type nodeService struct {
 	nbsClient nbsclient.ClientIface
 	nfsClient nfsclient.EndpointClientIface
 	mounter   mounter.Interface
+	deviceMap map[string]string
 }
 
 func newNodeService(
@@ -117,6 +126,7 @@ func newNodeService(
 		mounter:             mounter,
 		targetFsPathRegexp:  regexp.MustCompile(targetFsPathPattern),
 		targetBlkPathRegexp: regexp.MustCompile(targetBlkPathPattern),
+		deviceMap:           make(map[string]string),
 	}
 }
 
@@ -264,6 +274,8 @@ func (s *nodeService) NodeUnpublishVolume(
 			"Failed to unpublish volume: %v", err)
 	}
 
+	delete(s.deviceMap, req.VolumeId)
+
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
@@ -319,6 +331,7 @@ func (s *nodeService) nodePublishDiskAsFilesystem(
 	if resp.NbdDeviceFile == "" {
 		return fmt.Errorf("NbdDeviceFile shouldn't be empty")
 	}
+	s.deviceMap[req.VolumeId] = resp.NbdDeviceFile
 
 	logVolume(req.VolumeId, "endpoint started with device: %q", resp.NbdDeviceFile)
 
@@ -387,6 +400,7 @@ func (s *nodeService) nodePublishDiskAsBlockDevice(
 		return fmt.Errorf("NbdDeviceFile shouldn't be empty")
 	}
 
+	s.deviceMap[req.VolumeId] = resp.NbdDeviceFile
 	logVolume(req.VolumeId, "endpoint started with device: %q", resp.NbdDeviceFile)
 	return s.mountBlockDevice(req.VolumeId, resp.NbdDeviceFile, req.TargetPath)
 }
@@ -692,6 +706,8 @@ func (s *nodeService) NodeGetVolumeStats(
 	req *csi.NodeGetVolumeStatsRequest) (
 	*csi.NodeGetVolumeStatsResponse, error) {
 
+	log.Printf("csi.NodeGetVolumeStats: %+v", req)
+
 	if req.VolumeId == "" {
 		return nil, s.statusError(
 			codes.InvalidArgument,
@@ -763,4 +779,99 @@ func (s *nodeService) NodeGetVolumeStats(
 			Unit:      csi.VolumeUsage_INODES,
 		},
 	}}, nil
+}
+
+func (s *nodeService) NodeExpandVolume(
+	ctx context.Context,
+	req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+
+	log.Printf("csi.NodeExpandVolume: %+v", req)
+
+	if req.VolumeId == "" {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"VolumeId is missing in NodeExpandVolumeRequest")
+	}
+
+	if req.VolumePath == "" {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"VolumePath is missing in NodeExpandVolumeRequest")
+	}
+
+	if s.nbsClient == nil {
+		return nil, fmt.Errorf("NodeExpandVolume is not supported")
+	}
+
+	resp, err := s.nbsClient.DescribeVolume(
+		ctx, &nbsapi.TDescribeVolumeRequest{
+			DiskId: req.VolumeId,
+		},
+	)
+
+	if err != nil {
+		if nbsclient.IsDiskNotFoundError(err) {
+			return nil, s.statusError(
+				codes.NotFound,
+				"Volume is not found")
+		}
+		return nil, s.statusErrorf(
+			codes.Internal,
+			"Failed to expand volume: %v", err)
+	}
+
+	if req.CapacityRange == nil {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CapacityRange is missing in NodeExpandVolumeRequest")
+	}
+
+	nbdDevicePath, ok := s.deviceMap[req.VolumeId]
+	if !ok {
+		return nil, s.statusErrorf(
+			codes.Internal,
+			"nbdDevicePath is missing")
+	}
+
+	newBlocksCount := uint64(req.CapacityRange.RequiredBytes) / uint64(resp.Volume.BlockSize)
+	log.Printf("Resize volume id %v blocks count %v", req.VolumeId, newBlocksCount)
+	_, err = s.nbsClient.ResizeVolume(ctx, &nbsapi.TResizeVolumeRequest{
+		DiskId:             req.VolumeId,
+		BlocksCount:        newBlocksCount,
+		ConfigVersion:      resp.Volume.ConfigVersion,
+		PerformanceProfile: resp.Volume.PerformanceProfile,
+	})
+
+	if err != nil {
+		log.Printf("Resize volume failed %v", err)
+		return nil, err
+	}
+
+	nbdDevice, err := os.OpenFile(nbdDevicePath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		log.Printf("Open nbd device failed %v", err)
+		return nil, err
+	}
+	defer nbdDevice.Close()
+
+	NBD_SET_SIZE := uintptr(43778)
+	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uintptr(nbdDevice.Fd()),
+		NBD_SET_SIZE, uintptr(newBlocksCount*uint64(resp.Volume.BlockSize)))
+	if errno, ok := err.(syscall.Errno); errno != 0 && ok {
+		return nil, s.statusErrorf(
+			codes.Internal,
+			"Failed to set NBD_SET_SIZE %v", err)
+	}
+
+	cmd := exec.Command("resize2fs", nbdDevicePath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, s.statusErrorf(
+			codes.Internal,
+			"Failed to resize filesystem %v, output %s",
+			err, out)
+	}
+
+	return &csi.NodeExpandVolumeResponse{
+		CapacityBytes: int64(newBlocksCount * uint64(resp.Volume.BlockSize)),
+	}, nil
 }
