@@ -5,6 +5,7 @@
 #include "profile_log_events.h"
 #include "tablet_database.h"
 #include "tablet_private.h"
+#include "tablet_state_cache.h"
 
 #include <cloud/filestore/libs/diagnostics/profile_log.h>
 #include <cloud/filestore/libs/service/request.h>
@@ -155,6 +156,22 @@ struct TSessionAware
         , RequestId(GetRequestId(request))
         , SessionSeqNo(GetSessionSeqNo(request))
     {}
+};
+
+/**
+ * @brief Transactions, derived from this class, may modify inode-related data.
+ * Thus, to guarantee consistency, they store all the changes applied to this
+ * data in the oplog.
+ */
+struct TIndexStateOplog
+{
+    TVector<TInMemoryIndexState::TIndexStateRequest> IndexStateRequests;
+
+protected:
+    void Clear()
+    {
+        IndexStateRequests.clear();
+    }
 };
 
 struct TProfileAware {
@@ -477,7 +494,7 @@ struct TTxIndexTablet
     // DestroySession
     //
 
-    struct TDestroySession
+    struct TDestroySession : TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const TString SessionId;
@@ -499,6 +516,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             Nodes.clear();
         }
     };
@@ -507,7 +525,7 @@ struct TTxIndexTablet
     // CreateCheckpoint
     //
 
-    struct TCreateCheckpoint
+    struct TCreateCheckpoint : TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const TString CheckpointId;
@@ -527,6 +545,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
         }
     };
@@ -535,7 +554,7 @@ struct TTxIndexTablet
     // DeleteCheckpoint
     //
 
-    struct TDeleteCheckpoint
+    struct TDeleteCheckpoint : TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const TString CheckpointId;
@@ -569,6 +588,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
 
             NodeIds.clear();
@@ -612,7 +632,7 @@ struct TTxIndexTablet
     // CreateNode
     //
 
-    struct TCreateNode : TSessionAware
+    struct TCreateNode : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 ParentNodeId;
@@ -658,6 +678,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             ParentNode.Clear();
             ChildNodeId = InvalidNodeId;
@@ -673,7 +694,7 @@ struct TTxIndexTablet
     // UnlinkNode
     //
 
-    struct TUnlinkNode : TSessionAware
+    struct TUnlinkNode : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const NProto::TUnlinkNodeRequest Request;
@@ -701,6 +722,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             ParentNode.Clear();
             ChildNode.Clear();
@@ -714,7 +736,7 @@ struct TTxIndexTablet
     // RenameNode
     //
 
-    struct TRenameNode : TSessionAware
+    struct TRenameNode : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 ParentNodeId;
@@ -755,6 +777,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             ParentNode.Clear();
             ChildNode.Clear();
@@ -880,7 +903,7 @@ struct TTxIndexTablet
     // SetNodeAttr
     //
 
-    struct TSetNodeAttr : TSessionAware
+    struct TSetNodeAttr : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const NProto::TSetNodeAttrRequest Request;
@@ -900,6 +923,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             Node.Clear();
         }
@@ -979,7 +1003,7 @@ struct TTxIndexTablet
     // SetNodeXAttr
     //
 
-    struct TSetNodeXAttr : TSessionAware
+    struct TSetNodeXAttr : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const NProto::TSetNodeXAttrRequest Request;
@@ -1005,6 +1029,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             Version = 0;
             CommitId = InvalidCommitId;
             Node.Clear();
@@ -1080,7 +1105,7 @@ struct TTxIndexTablet
     // RemoveNodeXAttr
     //
 
-    struct TRemoveNodeXAttr : TSessionAware
+    struct TRemoveNodeXAttr : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const NProto::TRemoveNodeXAttrRequest Request;
@@ -1103,6 +1128,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             Node.Clear();
             Attr.Clear();
@@ -1113,7 +1139,7 @@ struct TTxIndexTablet
     // CreateHandle
     //
 
-    struct TCreateHandle : TSessionAware
+    struct TCreateHandle : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 NodeId;
@@ -1156,6 +1182,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             ReadCommitId = InvalidCommitId;
             WriteCommitId = InvalidCommitId;
             TargetNodeId = InvalidNodeId;
@@ -1175,7 +1202,7 @@ struct TTxIndexTablet
     // DestroyHandle
     //
 
-    struct TDestroyHandle : TSessionAware
+    struct TDestroyHandle : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const NProto::TDestroyHandleRequest Request;
@@ -1192,6 +1219,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             Node.Clear();
         }
     };
@@ -1334,7 +1362,7 @@ struct TTxIndexTablet
     // WriteData
     //
 
-    struct TWriteData : TSessionAware
+    struct TWriteData : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui32 WriteBlobThreshold;
@@ -1362,6 +1390,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             NodeId = InvalidNodeId;
             Node.Clear();
@@ -1379,7 +1408,7 @@ struct TTxIndexTablet
     // AddData
     //
 
-    struct TAddData : TSessionAware
+    struct TAddData : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 Handle;
@@ -1409,6 +1438,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             NodeId = InvalidNodeId;
             Node.Clear();
         }
@@ -1418,7 +1448,7 @@ struct TTxIndexTablet
     // WriteBatch
     //
 
-    struct TWriteBatch
+    struct TWriteBatch : TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const bool SkipFresh;
@@ -1441,6 +1471,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             WriteRanges.clear();
             Nodes.clear();
@@ -1451,7 +1482,7 @@ struct TTxIndexTablet
     // AllocateData
     //
 
-    struct TAllocateData : TSessionAware
+    struct TAllocateData : TSessionAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 Handle;
@@ -1476,6 +1507,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             CommitId = InvalidCommitId;
             NodeId = InvalidNodeId;
             Node.Clear();
@@ -1486,7 +1518,7 @@ struct TTxIndexTablet
     // AddBlob
     //
 
-    struct TAddBlob : TProfileAware
+    struct TAddBlob : TProfileAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const EAddBlobMode Mode;
@@ -1523,6 +1555,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             TProfileAware::Clear();
 
             CommitId = InvalidCommitId;
@@ -1690,7 +1723,7 @@ struct TTxIndexTablet
     // TruncateRange
     //
 
-    struct TTruncateRange : TProfileAware
+    struct TTruncateRange : TProfileAware, TIndexStateOplog
     {
         const TRequestInfoPtr RequestInfo;
         const ui64 NodeId;
@@ -1708,6 +1741,7 @@ struct TTxIndexTablet
 
         void Clear()
         {
+            TIndexStateOplog::Clear();
             TProfileAware::Clear();
         }
     };

@@ -1778,4 +1778,144 @@ bool TIndexTabletDatabase::ReadOpLog(TVector<NProto::TOpLogEntry>& opLog)
     return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+TIndexTabletDatabaseProxy::TIndexTabletDatabaseProxy(
+    NKikimr::NTable::TDatabase& database,
+    TVector<TInMemoryIndexState::TIndexStateRequest>* requestsLog)
+    : TIndexTabletDatabase(database)
+    , RequestsLog(requestsLog)
+{
+    Y_UNUSED(RequestsLog);
+    // TODO(#1146): use this requestsLog to store all modifying requests
+}
+
+void TIndexTabletDatabaseProxy::WriteNode(
+    ui64 nodeId,
+    ui64 commitId,
+    const NProto::TNode& attrs)
+{
+    TIndexTabletDatabase::WriteNode(nodeId, commitId, attrs);
+    // TODO(#1146): write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNode(ui64 nodeId)
+{
+    TIndexTabletDatabase::DeleteNode(nodeId);
+    // TODO(#1146): write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::WriteNodeVer(
+    ui64 nodeId,
+    ui64 minCommitId,
+    ui64 maxCommitId,
+    const NProto::TNode& attrs)
+{
+    TIndexTabletDatabase::WriteNodeVer(nodeId, minCommitId, maxCommitId, attrs);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNodeVer(ui64 nodeId, ui64 commitId)
+{
+    TIndexTabletDatabase::DeleteNodeVer(nodeId, commitId);
+    // TODO#1146:: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::WriteNodeAttr(
+    ui64 nodeId,
+    ui64 commitId,
+    const TString& name,
+    const TString& value,
+    ui64 version)
+{
+    TIndexTabletDatabase::WriteNodeAttr(nodeId, commitId, name, value, version);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNodeAttr(ui64 nodeId, const TString& name)
+{
+    TIndexTabletDatabase::DeleteNodeAttr(nodeId, name);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::WriteNodeAttrVer(
+    ui64 nodeId,
+    ui64 minCommitId,
+    ui64 maxCommitId,
+    const TString& name,
+    const TString& value,
+    ui64 version)
+{
+    TIndexTabletDatabase::WriteNodeAttrVer(
+        nodeId,
+        minCommitId,
+        maxCommitId,
+        name,
+        value,
+        version);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNodeAttrVer(
+    ui64 nodeId,
+    ui64 commitId,
+    const TString& name)
+{
+    TIndexTabletDatabase::DeleteNodeAttrVer(nodeId, commitId, name);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::WriteNodeRef(
+    ui64 nodeId,
+    ui64 commitId,
+    const TString& name,
+    ui64 childNode,
+    const TString& followerId,
+    const TString& followerName)
+{
+    TIndexTabletDatabase::WriteNodeRef(
+        nodeId,
+        commitId,
+        name,
+        childNode,
+        followerId,
+        followerName);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNodeRef(ui64 nodeId, const TString& name)
+{
+    TIndexTabletDatabase::DeleteNodeRef(nodeId, name);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::WriteNodeRefVer(
+    ui64 nodeId,
+    ui64 minCommitId,
+    ui64 maxCommitId,
+    const TString& name,
+    ui64 childNode,
+    const TString& followerId,
+    const TString& followerName)
+{
+    TIndexTabletDatabase::WriteNodeRefVer(
+        nodeId,
+        minCommitId,
+        maxCommitId,
+        name,
+        childNode,
+        followerId,
+        followerName);
+    // TODO(#1146):: write to the oplog
+}
+
+void TIndexTabletDatabaseProxy::DeleteNodeRefVer(
+    ui64 nodeId,
+    ui64 commitId,
+    const TString& name)
+{
+    TIndexTabletDatabase::DeleteNodeRefVer(nodeId, commitId, name);
+    // TODO(#1146):: write to the oplog
+}
+
 }   // namespace NCloud::NFileStore::NStorage
