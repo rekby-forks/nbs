@@ -2401,6 +2401,74 @@ Y_UNIT_TEST_SUITE(TStorageServiceTest)
         validateWriteData(1, 128_KB, 1 + 128_KB);
     }
 
+    Y_UNIT_TEST(ShouldUseThreeStageWriteForLargeUnalignedRequestsIfEnabled)
+    {
+        NProto::TStorageConfig config;
+        config.SetThreeStageWriteEnabled(true);
+        config.SetThreeStageWriteThreshold(4_KB);
+        config.SetUnalignedThreeStageWriteEnabled(true);
+        TTestEnv env({}, config);
+        env.CreateSubDomain("nfs");
+
+        ui32 nodeIdx = env.CreateNode("nfs");
+
+        TServiceClient service(env.GetRuntime(), nodeIdx);
+        const TString fs = "test";
+        service.CreateFileStore(fs, 1000);
+
+        auto headers = service.InitSession(fs, "client");
+        ui64 nodeId = service
+            .CreateNode(headers, TCreateNodeArgs::File(RootNodeId, "file"))
+            ->Record.GetNode()
+            .GetId();
+        ui64 handle = service
+            .CreateHandle(headers, fs, nodeId, "", TCreateHandleArgs::RDWR)
+            ->Record.GetHandle();
+
+        NProtoPrivate::TAddDataRequest addData;
+        env.GetRuntime().SetEventFilter(
+            [&](auto& runtime, auto& event)
+            {
+                Y_UNUSED(runtime);
+
+                switch (event->GetTypeRewrite()) {
+                    case TEvIndexTablet::EvAddDataRequest: {
+                        addData = event->template Get<
+                            TEvIndexTablet::TEvAddDataRequest>()->Record;
+                        break;
+                    }
+                }
+                return false;
+            });
+
+        auto data = GenerateValidateData(7_KB);
+        auto offset = 3_KB;
+
+        service.WriteData(headers, fs, nodeId, handle, offset, data);
+        auto readData = service.ReadData(
+            headers,
+            fs,
+            nodeId,
+            handle,
+            offset,
+            data.Size())->Record.GetBuffer();
+        UNIT_ASSERT_VALUES_EQUAL(data, readData);
+        UNIT_ASSERT_VALUES_EQUAL(2, addData.UnalignedDataRangesSize());
+        UNIT_ASSERT_VALUES_EQUAL(
+            TStringBuf(data).Head(1_KB),
+            addData.GetUnalignedDataRanges(0).GetContent());
+        UNIT_ASSERT_VALUES_EQUAL(
+            TStringBuf(data).Tail(5_KB),
+            addData.GetUnalignedDataRanges(1).GetContent());
+
+        auto stat = service.GetNodeAttr(
+            headers,
+            fs,
+            RootNodeId,
+            "file")->Record.GetNode();
+        UNIT_ASSERT_VALUES_EQUAL(data.Size() + offset, stat.GetSize());
+    }
+
     Y_UNIT_TEST(ShouldFallbackThreeStageWriteToSimpleWrite)
     {
         TTestEnv env;
@@ -2538,6 +2606,70 @@ Y_UNIT_TEST_SUITE(TStorageServiceTest)
         UNIT_ASSERT_VALUES_EQUAL(3, runtime.GetCounter(TEvService::EvWriteDataResponse));
         UNIT_ASSERT_VALUES_EQUAL(1, evPuts);
         // clang-format on
+    }
+
+    Y_UNIT_TEST(ShouldSendBSGroupFlagsToTabletViaAddDataRequests)
+    {
+        TTestEnv env;
+        env.CreateSubDomain("nfs");
+
+        ui32 nodeIdx = env.CreateNode("nfs");
+
+        TServiceClient service(env.GetRuntime(), nodeIdx);
+        const TString fs = "test";
+        service.CreateFileStore(fs, 1000);
+
+        {
+            NProto::TStorageConfig newConfig;
+            newConfig.SetThreeStageWriteEnabled(true);
+            const auto response =
+                ExecuteChangeStorageConfig(std::move(newConfig), service);
+            env.GetRuntime().DispatchEvents({}, TDuration::Seconds(1));
+        }
+
+        auto headers = service.InitSession(fs, "client");
+        ui64 nodeId = service
+            .CreateNode(headers, TCreateNodeArgs::File(RootNodeId, "file"))
+            ->Record.GetNode()
+            .GetId();
+        ui64 handle = service
+            .CreateHandle(headers, fs, nodeId, "", TCreateHandleArgs::RDWR)
+            ->Record.GetHandle();
+
+        const auto yellowFlag =
+            NKikimrBlobStorage::EStatusFlags::StatusDiskSpaceYellowStop;
+
+        NProtoPrivate::TAddDataRequest addData;
+        using TFlags = NKikimr::TStorageStatusFlags;
+        env.GetRuntime().SetEventFilter(
+            [&](auto& runtime, auto& event)
+            {
+                Y_UNUSED(runtime);
+
+                switch (event->GetTypeRewrite()) {
+                    case TEvBlobStorage::EvPutResult: {
+                        auto* msg =
+                            event->template Get<TEvBlobStorage::TEvPutResult>();
+                        const_cast<TFlags&>(msg->StatusFlags).Raw |=
+                            ui32(yellowFlag);
+                        break;
+                    }
+
+                    case TEvIndexTablet::EvAddDataRequest: {
+                        addData = event->template Get<
+                            TEvIndexTablet::TEvAddDataRequest>()->Record;
+                        break;
+                    }
+                }
+                return false;
+            });
+
+        TString data = GenerateValidateData(256_KB);
+        service.WriteData(headers, fs, nodeId, handle, 0, data);
+        UNIT_ASSERT_VALUES_EQUAL(1, addData.BlobIdsSize());
+        UNIT_ASSERT_VALUES_EQUAL(1, addData.StorageStatusFlagsSize());
+        UNIT_ASSERT(NKikimr::TStorageStatusFlags(
+            addData.GetStorageStatusFlags(0)).Check(yellowFlag));
     }
 
     void ConfigureFollowers(
@@ -2710,6 +2842,246 @@ Y_UNIT_TEST_SUITE(TStorageServiceTest)
             const auto& sessions = response.GetSessions();
             UNIT_ASSERT_VALUES_EQUAL(0, sessions.size());
         }
+    }
+
+    Y_UNIT_TEST(ShouldRestoreSessionInFollowerAfterFollowerRestart)
+    {
+        const auto idleSessionTimeout = TDuration::Minutes(2);
+        NProto::TStorageConfig config;
+        config.SetIdleSessionTimeout(idleSessionTimeout.MilliSeconds());
+        TTestEnv env({}, config);
+        env.CreateSubDomain("nfs");
+
+        ui32 nodeIdx = env.CreateNode("nfs");
+
+        const TString fsId = "test";
+        const auto shard1Id = fsId + "-f1";
+        const auto shard2Id = fsId + "-f2";
+
+        TServiceClient service(env.GetRuntime(), nodeIdx);
+
+        TActorId leaderActorId;
+        ui64 shard1TabletId = -1;
+        ui64 shard2TabletId = -1;
+        const auto startupEventType =
+            TEvIndexTabletPrivate::EvLoadCompactionMapChunkRequest;
+        env.GetRuntime().SetEventFilter(
+            [&] (auto& runtime, TAutoPtr<IEventHandle>& event) {
+                Y_UNUSED(runtime);
+                switch (event->GetTypeRewrite()) {
+                    case TEvSSProxy::EvDescribeFileStoreResponse: {
+                        using TDesc = TEvSSProxy::TEvDescribeFileStoreResponse;
+                        const auto* msg = event->Get<TDesc>();
+                        const auto& desc =
+                            msg->PathDescription.GetFileStoreDescription();
+                        if (desc.GetConfig().GetFileSystemId() == shard1Id) {
+                            shard1TabletId = desc.GetIndexTabletId();
+                        }
+
+                        if (desc.GetConfig().GetFileSystemId() == shard2Id) {
+                            shard2TabletId = desc.GetIndexTabletId();
+                        }
+
+                        break;
+                    }
+
+                    case startupEventType: {
+                        if (!leaderActorId) {
+                            leaderActorId = event->Sender;
+                        }
+
+                        break;
+                    }
+                }
+
+                return false;
+            });
+
+        service.CreateFileStore(fsId, 1'000);
+        service.CreateFileStore(shard1Id, 1'000);
+        service.CreateFileStore(shard2Id, 1'000);
+
+        ConfigureFollowers(service, fsId, shard1Id, shard2Id);
+
+        auto headers = service.InitSession(fsId, "client");
+        auto headers1 = headers;
+        headers1.FileSystemId = shard1Id;
+        auto headers2 = headers;
+        headers2.FileSystemId = shard2Id;
+
+        // creating nodes and handles in both shards
+
+        ui64 nodeId1 =
+            service
+                .CreateNode(headers1, TCreateNodeArgs::File(RootNodeId, "file"))
+                ->Record.GetNode()
+                .GetId();
+
+        UNIT_ASSERT_VALUES_EQUAL((1LU << 56U) + 2, nodeId1);
+
+        ui64 handle1 =
+            service
+                .CreateHandle(
+                    headers1,
+                    headers1.FileSystemId,
+                    nodeId1,
+                    "",
+                    TCreateHandleArgs::RDWR)
+                ->Record.GetHandle();
+
+        UNIT_ASSERT_C(
+            handle1 >= (1LU << 56U) && handle1 < (2LU << 56U),
+            handle1);
+
+        ui64 nodeId2 =
+            service
+                .CreateNode(headers2, TCreateNodeArgs::File(RootNodeId, "file"))
+                ->Record.GetNode()
+                .GetId();
+
+        UNIT_ASSERT_VALUES_EQUAL((2LU << 56U) + 2, nodeId2);
+
+        ui64 handle2 =
+            service
+                .CreateHandle(
+                    headers2,
+                    headers2.FileSystemId,
+                    nodeId2,
+                    "",
+                    TCreateHandleArgs::RDWR)
+                ->Record.GetHandle();
+
+        UNIT_ASSERT_C(
+            handle2 >= (2LU << 56U) && handle2 < (3LU << 56U),
+            handle2);
+
+        // rebooting shards
+
+        TVector<TActorId> fsActorIds;
+        env.GetRuntime().SetEventFilter(
+            [&] (auto& runtime, TAutoPtr<IEventHandle>& event) {
+                Y_UNUSED(runtime);
+                switch (event->GetTypeRewrite()) {
+                    case TEvIndexTabletPrivate::EvLoadCompactionMapChunkRequest: {
+                        // catching one of the startup events to detect shard
+                        // actor ids
+
+                        if (Find(fsActorIds, event->Sender) == fsActorIds.end()) {
+                            fsActorIds.push_back(event->Sender);
+                        }
+
+                        break;
+                    }
+                }
+
+                return false;
+            });
+
+        TIndexTabletClient shard1(
+            env.GetRuntime(),
+            nodeIdx,
+            shard1TabletId,
+            {}, // config
+            false // updateConfig
+        );
+        shard1.RebootTablet();
+
+        TIndexTabletClient shard2(
+            env.GetRuntime(),
+            nodeIdx,
+            shard2TabletId,
+            {}, // config
+            false // updateConfig
+        );
+        shard2.RebootTablet();
+
+        // triggering follower sessions sync
+        // sending the event manually since registration observers which enable
+        // scheduling for actors are reset upon tablet reboot
+
+        env.GetRuntime().AdvanceCurrentTime(idleSessionTimeout / 2);
+
+        {
+            using TRequest = TEvIndexTabletPrivate::TEvSyncSessionsRequest;
+
+            env.GetRuntime().Send(
+                new IEventHandle(
+                    leaderActorId, // recipient
+                    TActorId(), // sender
+                    new TRequest(),
+                    0, // flags
+                    0),
+                0);
+        }
+
+        env.GetRuntime().DispatchEvents({}, TDuration::MilliSeconds(100));
+        // waiting for idle session expiration
+        // sending the event manually since registration observers which enable
+        // scheduling for actors are reset upon tablet reboot
+
+        env.GetRuntime().AdvanceCurrentTime(idleSessionTimeout / 2);
+        service.PingSession(headers);
+
+        for (const auto& actorId: fsActorIds) {
+            using TRequest = TEvIndexTabletPrivate::TEvCleanupSessionsRequest;
+
+            env.GetRuntime().Send(
+                new IEventHandle(
+                    actorId, // recipient
+                    TActorId(), // sender
+                    new TRequest(),
+                    0, // flags
+                    0),
+                0);
+        }
+
+        // need to pass deadline instead of timeout here since otherwise the
+        // adjusted time gets added to the timeout
+        env.GetRuntime().DispatchEvents(
+            {},
+            TInstant::Now() + TDuration::MilliSeconds(100));
+
+        // shard sessions should exist
+
+        for (const auto& id: {fsId, shard1Id, shard2Id}) {
+            NProtoPrivate::TDescribeSessionsRequest request;
+            request.SetFileSystemId(id);
+
+            TString buf;
+            google::protobuf::util::MessageToJsonString(request, &buf);
+            auto jsonResponse = service.ExecuteAction("describesessions", buf);
+            NProtoPrivate::TDescribeSessionsResponse response;
+            UNIT_ASSERT(google::protobuf::util::JsonStringToMessage(
+                jsonResponse->Record.GetOutput(), &response).ok());
+
+            const auto& sessions = response.GetSessions();
+            UNIT_ASSERT_VALUES_EQUAL(1, sessions.size());
+
+            UNIT_ASSERT_VALUES_EQUAL(
+                headers.SessionId,
+                sessions[0].GetSessionId());
+            UNIT_ASSERT_VALUES_EQUAL(
+                headers.ClientId,
+                sessions[0].GetClientId());
+        }
+
+        // handles should be alive
+
+        service.WriteData(
+            headers1,
+            headers1.FileSystemId,
+            nodeId1,
+            handle1,
+            0,
+            TString(1_MB, 'a'));
+
+        service.WriteData(
+            headers2,
+            headers2.FileSystemId,
+            nodeId2,
+            handle2,
+            0,
+            TString(1_MB, 'a'));
     }
 
     Y_UNIT_TEST(ShouldCreateNodeInFollowerViaLeader)
@@ -5143,6 +5515,135 @@ Y_UNIT_TEST_SUITE(TStorageServiceTest)
         UNIT_ASSERT_VALUES_EQUAL(
             nodeId1,
             createHandleResponse->Record.GetNodeAttr().GetId());
+    }
+
+    Y_UNIT_TEST(ShouldUseAliasesForRequestsForwarding)
+    {
+        const TString originalFs = "test";
+        const TString mirroredFs = "test-mirrored";
+
+        NProto::TStorageConfig::TFilestoreAliasEntry entry;
+        entry.SetAlias(mirroredFs);
+        entry.SetFsId(originalFs);
+        NProto::TStorageConfig::TFilestoreAliases aliases;
+        aliases.MutableEntries()->Add(std::move(entry));
+
+        NProto::TStorageConfig config;
+        config.MutableFilestoreAliases()->Swap(&aliases);
+
+        TTestEnv env({}, config);
+        env.CreateSubDomain("nfs");
+
+        ui32 nodeIdx = env.CreateNode("nfs");
+
+
+        TServiceClient service(env.GetRuntime(), nodeIdx);
+        service.CreateFileStore(originalFs, 1000);
+        service.CreateFileStore(mirroredFs, 1000);
+
+        auto originalHeaders = service.InitSession(originalFs, "client");
+        auto mirroredHeaders = service.InitSession(mirroredFs, "client");
+
+        // Create file in the original fs
+        service.CreateNode(originalHeaders, TCreateNodeArgs::File(RootNodeId, "testfile"));
+
+        // Check that the file is visible in the mirrored fs
+        auto listNodesResponse =
+            service.ListNodes(mirroredHeaders, mirroredFs, RootNodeId)->Record;
+        UNIT_ASSERT_VALUES_EQUAL(1, listNodesResponse.NamesSize());
+        UNIT_ASSERT_VALUES_EQUAL(1, listNodesResponse.NodesSize());
+        UNIT_ASSERT_VALUES_EQUAL("testfile", listNodesResponse.GetNames(0));
+
+        auto nodeId = listNodesResponse.GetNodes(0).GetId();
+
+        // write to the file in the mirrored fs
+        auto mirroredHandle = service.CreateHandle(
+            mirroredHeaders,
+            mirroredFs,
+            nodeId,
+            "",
+            TCreateHandleArgs::WRNLY)->Record.GetHandle();
+        auto data = GenerateValidateData(256_KB);
+        service.WriteData(mirroredHeaders, mirroredFs, nodeId, mirroredHandle, 0, data);
+
+        // validate that written data can be read from the original fs
+        auto originalHandle = service.CreateHandle(
+            originalHeaders,
+            originalFs,
+            nodeId,
+            "",
+            TCreateHandleArgs::RDNLY)->Record.GetHandle();
+        auto readData = service.ReadData(
+            originalHeaders,
+            originalFs,
+            nodeId,
+            originalHandle,
+            0,
+            256_KB)->Record.GetBuffer();
+        UNIT_ASSERT_VALUES_EQUAL(data, readData);
+    }
+
+    Y_UNIT_TEST(ShouldWriteCompactionMap)
+    {
+        TTestEnv env;
+        env.CreateSubDomain("nfs");
+
+        ui32 nodeIdx = env.CreateNode("nfs");
+
+        ui64 tabletId = -1;
+        ui32 lastCompactionMapRangeId = 0;
+        env.GetRuntime().SetEventFilter(
+            [&] (auto& runtime, TAutoPtr<IEventHandle>& event) {
+                Y_UNUSED(runtime);
+                switch (event->GetTypeRewrite()) {
+                    case TEvSSProxy::EvDescribeFileStoreResponse: {
+                        using TDesc = TEvSSProxy::TEvDescribeFileStoreResponse;
+                        const auto* msg = event->Get<TDesc>();
+                        const auto& desc =
+                            msg->PathDescription.GetFileStoreDescription();
+                        tabletId = desc.GetIndexTabletId();
+                        break;
+                    }
+                    case TEvIndexTabletPrivate::
+                        EvLoadCompactionMapChunkCompleted: {
+                        lastCompactionMapRangeId = Max(
+                            event
+                                ->Get<TEvIndexTabletPrivate::
+                                        TEvLoadCompactionMapChunkCompleted>()
+                                ->LastRangeId,
+                            lastCompactionMapRangeId);
+                        break;
+                    }
+                }
+
+                return false;
+        });
+
+        TServiceClient service(env.GetRuntime(), nodeIdx);
+        service.CreateFileStore("test", 1'000);
+
+        NProtoPrivate::TWriteCompactionMapRequest request;
+        request.SetFileSystemId("test");
+        for (ui32 i = 4; i < 30; ++i) {
+            NProtoPrivate::TCompactionRangeStats range;
+            range.SetRangeId(i);
+            range.SetBlobCount(1);
+            range.SetDeletionCount(2);
+            *request.AddRanges() = range;
+        }
+
+        TString buf;
+        google::protobuf::util::MessageToJsonString(request, &buf);
+        auto jsonResponse = service.ExecuteAction("writecompactionmap", buf);
+        NProtoPrivate::TWriteCompactionMapResponse response;
+        UNIT_ASSERT(google::protobuf::util::JsonStringToMessage(
+            jsonResponse->Record.GetOutput(),
+            &response).ok());
+
+        TIndexTabletClient tablet(env.GetRuntime(), nodeIdx, tabletId);
+        tablet.RebootTablet();
+
+        UNIT_ASSERT_VALUES_EQUAL(lastCompactionMapRangeId, 29);
     }
 }
 

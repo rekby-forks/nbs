@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 import time
+import json
 
 from pathlib import Path
 
@@ -129,7 +130,9 @@ class NbsCsiDriverRunner:
                 "--node-id=localhost",
                 "--nbs-socket", self._grpc_unix_socket_path,
                 f"--sockets-dir={self._sockets_dir}",
-                f"--endpoint={str(self._endpoint)}"
+                f"--endpoint={str(self._endpoint)}",
+                "--nfs-vhost-port=0",
+                "--nfs-server-port=0",
             ],
             stdout=self._log_file,
             stderr=self._log_file,
@@ -150,6 +153,7 @@ class NbsCsiDriverRunner:
         )
         logging.info("Stdout: %s", result.stdout)
         logging.info("Stderr: %s", result.stderr)
+        return result.stdout
 
     def _wait_socket(self, timeout_sec=60):
         started_at = time.monotonic()
@@ -199,6 +203,16 @@ class NbsCsiDriverRunner:
         self._proc.kill()
         self._log_file.close()
 
+    def volumestats(self, pod_id: str, volume_id: str):
+        ret = self._node_run(
+            "volumestats",
+            "--pod-id",
+            pod_id,
+            "--volume-id",
+            volume_id,
+        )
+        return json.loads(ret)
+
 
 def cleanup_after_test(env: CsiLoadTest):
     if env is None:
@@ -245,6 +259,104 @@ def test_nbs_csi_driver_mounted_disk_protected_from_deletion():
             env.csi.delete_volume(volume_name)
         except subprocess.CalledProcessError as e:
             log_called_process_error(e)
+    except subprocess.CalledProcessError as e:
+        log_called_process_error(e)
+        raise
+    finally:
+        cleanup_after_test(env)
+
+
+def test_nbs_csi_driver_volume_stat():
+    # Scenario
+    # 1. create volume and publish volume
+    # 2. get volume stats and validate output
+    # 3. create two files in the mounted directory
+    # 4. get volume stats again and validate output
+    # 5. check that the difference between used/available bytes is 2 block sizes
+    # 6. check that the difference between used/available inodes is 2
+    env, run = init()
+    try:
+        volume_name = "example-disk"
+        volume_size = 1024 ** 3
+        pod_name = "example-pod"
+        pod_id = "deadbeef"
+        env.csi.create_volume(name=volume_name, size=volume_size)
+        env.csi.publish_volume(pod_id, volume_name, pod_name)
+        stats1 = env.csi.volumestats(pod_id, volume_name)
+
+        assert "usage" in stats1
+        usage_array1 = stats1["usage"]
+        assert 2 == len(usage_array1)
+        for usage in usage_array1:
+            usage = usage_array1[0]
+            assert {"unit", "total", "available", "used"} == usage.keys()
+            assert 0 != usage["total"]
+            assert usage["total"] == usage["available"] + usage["used"]
+
+        mount_path = Path("/var/lib/kubelet/pods") / pod_id / "volumes/kubernetes.io~csi" / volume_name / "mount"
+        (mount_path / "test1.file").write_bytes(b"\0")
+        (mount_path / "test2.file").write_bytes(b"\0")
+
+        stats2 = env.csi.volumestats(pod_id, volume_name)
+        assert "usage" in stats2
+        usage_array2 = stats2["usage"]
+        assert 2 == len(usage_array2)
+        for usage in usage_array2:
+            usage = usage_array2[0]
+            assert {"unit", "total", "available", "used"} == usage.keys()
+            assert 0 != usage["total"]
+            assert usage["total"] == usage["available"] + usage["used"]
+
+        bytesUsage1 = usage_array1[0]
+        bytesUsage2 = usage_array2[0]
+        assert 4096 * 2 == bytesUsage1["available"] - bytesUsage2["available"]
+        assert 4096 * 2 == bytesUsage2["used"] - bytesUsage1["used"]
+
+        nodesUsage1 = usage_array1[1]
+        nodesUsage2 = usage_array2[1]
+        assert 2 == nodesUsage1["available"] - nodesUsage2["available"]
+        assert 2 == nodesUsage2["used"] - nodesUsage1["used"]
+
+    except subprocess.CalledProcessError as e:
+        log_called_process_error(e)
+        raise
+    finally:
+        cleanup_after_test(env)
+
+
+def test_csi_sanity_nbs_backend():
+    env, run = init()
+    podId = "123"
+    nodeId = "456"
+    backend = "nbs"
+
+    try:
+        CSI_SANITY_BINARY_PATH = common.binary_path("cloud/blockstore/tools/testing/csi-sanity/bin/csi-sanity")
+        mount_dir = Path("/var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices/publish") / podId
+        mount_dir.mkdir(parents=True, exist_ok=True)
+
+        params_file = Path(os.getcwd()) / "params.yaml"
+        params_file.write_text(f"backend: {backend}")
+
+        skipTests = ["should fail when the node does not exist"]
+
+        args = [CSI_SANITY_BINARY_PATH,
+                "-csi.endpoint",
+                env.csi._endpoint,
+                "--csi.mountdir",
+                mount_dir / nodeId,
+                "-csi.testvolumeparameters",
+                params_file,
+                "-csi.testvolumeaccesstype",
+                "block",
+                "--ginkgo.skip",
+                '|'.join(skipTests)]
+        subprocess.run(
+            args,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except subprocess.CalledProcessError as e:
         log_called_process_error(e)
         raise

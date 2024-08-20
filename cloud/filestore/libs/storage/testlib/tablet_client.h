@@ -110,7 +110,8 @@ public:
             NKikimr::TTestActorRuntime& runtime,
             ui32 nodeIdx,
             ui64 tabletId,
-            const TFileSystemConfig& config = {})
+            const TFileSystemConfig& config = {},
+            bool updateConfig = true)
         : Runtime(runtime)
         , NodeIdx(nodeIdx)
         , TabletId(tabletId)
@@ -120,7 +121,9 @@ public:
         ReconnectPipe();
 
         WaitReady();
-        UpdateConfig(config);
+        if (updateConfig) {
+            UpdateConfig(config);
+        }
     }
 
     TIndexTabletClient& WithSessionSeqNo(ui64 seqNo)
@@ -286,6 +289,34 @@ public:
             request->Record.MutableHeaders()->SetSessionSeqNo(seqNo);
         }
         return request;
+    }
+
+    auto CreateForcedOperationRequest(
+        NProtoPrivate::TForcedOperationRequest::EForcedOperationType type)
+    {
+        NProtoPrivate::TForcedOperationRequest request;
+        request.SetOpType(type);
+        auto requestToTablet =
+            std::make_unique<TEvIndexTablet::TEvForcedOperationRequest>();
+
+        requestToTablet->Record = std::move(request);
+        return requestToTablet;
+    }
+
+    auto CreateWriteCompactionMapRequest(
+        const TVector<NProtoPrivate::TCompactionRangeStats>& ranges)
+    {
+        NProtoPrivate::TWriteCompactionMapRequest request;
+        for (auto range: ranges)
+        {
+            *request.AddRanges() = range;
+        }
+
+        auto requestToTablet =
+            std::make_unique<TEvIndexTablet::TEvWriteCompactionMapRequest>();
+
+        requestToTablet->Record = std::move(request);
+        return requestToTablet;
     }
 
     //
@@ -605,7 +636,8 @@ public:
         ui64 offset,
         ui64 length,
         const TVector<NKikimr::TLogoBlobID>& blobIds,
-        ui64 commitId)
+        ui64 commitId,
+        TVector<NProtoPrivate::TFreshDataRange> unalignedDataParts = {})
     {
         auto request = CreateSessionRequest<
             TEvIndexTablet::TEvAddDataRequest>();
@@ -619,6 +651,9 @@ public:
                 request->Record.MutableBlobIds()->Add());
         }
         request->Record.SetCommitId(commitId);
+        for (auto& part: unalignedDataParts) {
+            *request->Record.AddUnalignedDataRanges() = std::move(part);
+        }
         return request;
     }
 

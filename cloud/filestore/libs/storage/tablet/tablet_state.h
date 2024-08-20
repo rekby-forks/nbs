@@ -544,6 +544,10 @@ public:
         TIndexTabletDatabase& db,
         const TSessionHistoryEntry& entry, size_t maxEntryCount);
 
+    using TCreateSessionRequests =
+        TVector<NProtoPrivate::TCreateSessionRequest>;
+    TCreateSessionRequests BuildCreateSessionRequests(
+        const THashSet<TString>& filter) const;
     TVector<TMonSessionInfo> GetActiveSessions() const;
     TSessionsStats CalculateSessionsStats() const;
 
@@ -705,6 +709,12 @@ public:
         ui64 nodeId,
         ui64 commitId,
         TByteRange byteRange) const;
+
+    NProto::TError CheckFreshBytes(
+        ui64 nodeId,
+        ui64 commitId,
+        ui64 offset,
+        TStringBuf data) const;
 
     void WriteFreshBytes(
         TIndexTabletDatabase& db,

@@ -3,6 +3,7 @@
 #include <cloud/filestore/libs/diagnostics/profile_log_events.h>
 #include <cloud/filestore/libs/storage/api/tablet.h>
 #include <cloud/filestore/libs/storage/api/tablet_proxy.h>
+#include <cloud/filestore/libs/storage/model/range.h>
 #include <cloud/filestore/libs/storage/tablet/model/verify.h>
 #include <cloud/storage/core/libs/tablet/model/commit.h>
 
@@ -28,6 +29,8 @@ class TWriteDataActor final: public TActorBootstrapped<TWriteDataActor>
 private:
     // Original request
     NProto::TWriteDataRequest WriteRequest;
+    const TByteRange Range;
+    const TByteRange BlobRange;
     const TRequestInfoPtr RequestInfo;
 
     // Filesystem-specific params
@@ -47,17 +50,21 @@ private:
     // in flight
     TMaybe<TInFlightRequest> InFlightRequest;
     TVector<std::unique_ptr<TInFlightRequest>> InFlightBSRequests;
+    TVector<ui32> StorageStatusFlags;
     const NCloud::NProto::EStorageMediaKind MediaKind;
 
 public:
     TWriteDataActor(
             NProto::TWriteDataRequest request,
+            TByteRange range,
             TRequestInfoPtr requestInfo,
             TString logTag,
             IRequestStatsPtr requestStats,
             IProfileLogPtr profileLog,
             NCloud::NProto::EStorageMediaKind mediaKind)
         : WriteRequest(std::move(request))
+        , Range(range)
+        , BlobRange(Range.AlignedSubRange())
         , RequestInfo(std::move(requestInfo))
         , LogTag(std::move(logTag))
         , RequestStats(std::move(requestStats))
@@ -74,8 +81,8 @@ public:
         request->Record.SetFileSystemId(WriteRequest.GetFileSystemId());
         request->Record.SetNodeId(WriteRequest.GetNodeId());
         request->Record.SetHandle(WriteRequest.GetHandle());
-        request->Record.SetOffset(WriteRequest.GetOffset());
-        request->Record.SetLength(WriteRequest.GetBuffer().size());
+        request->Record.SetOffset(BlobRange.Offset);
+        request->Record.SetLength(BlobRange.Length);
 
         RequestInfo->CallContext->RequestType = EFileStoreRequest::GenerateBlobIds;
         InFlightRequest.ConstructInPlace(
@@ -94,9 +101,12 @@ public:
         LOG_DEBUG(
             ctx,
             TFileStoreComponents::SERVICE,
-            "WriteDataActor started, data size: %lu, offset: %lu",
+            "WriteDataActor started, data size: %lu, offset: %lu"
+            ", aligned size: %lu, aligned offset: %lu",
             WriteRequest.GetBuffer().size(),
-            WriteRequest.GetOffset());
+            WriteRequest.GetOffset(),
+            BlobRange.Length,
+            BlobRange.Offset);
 
         ctx.Send(MakeIndexTabletProxyServiceId(), request.release());
 
@@ -160,10 +170,11 @@ private:
     void WriteBlobs(const TActorContext& ctx)
     {
         RemainingBlobsToWrite = GenerateBlobIdsResponse.BlobsSize();
-        ui64 offset = 0;
+        ui64 offset = BlobRange.Offset - Range.Offset;
 
         RequestInfo->CallContext->RequestType = EFileStoreRequest::WriteBlob;
         InFlightBSRequests.reserve(RemainingBlobsToWrite);
+        StorageStatusFlags.resize(GenerateBlobIdsResponse.BlobsSize());
         for (const auto& blob: GenerateBlobIdsResponse.GetBlobs()) {
             NKikimr::TLogoBlobID blobId =
                 LogoBlobIDFromLogoBlobID(blob.GetBlobId());
@@ -178,7 +189,9 @@ private:
             InFlightBSRequests.back()->Start(ctx.Now());
 
             std::unique_ptr<TEvBlobStorage::TEvPut> request;
-            if (GenerateBlobIdsResponse.BlobsSize() == 1) {
+            if (GenerateBlobIdsResponse.BlobsSize() == 1
+                    && Range == BlobRange)
+            {
                 // do not copy the buffer if there is only one blob
                 request = std::make_unique<TEvBlobStorage::TEvPut>(
                     blobId,
@@ -238,11 +251,14 @@ private:
         ui64 blobIdx = msg->Id.Cookie();
         // It is implicitly expected that cookies are generated in increasing
         // order starting from 0.
+        // TODO: replace this TABLET_VERIFY with a critical event + WriteData
+        // fallback
         TABLET_VERIFY(
             blobIdx < InFlightBSRequests.size() &&
             InFlightBSRequests[blobIdx] &&
             !InFlightBSRequests[blobIdx]->IsCompleted());
         InFlightBSRequests[blobIdx]->Complete(ctx.Now(), {});
+        StorageStatusFlags[blobIdx] = msg->StatusFlags.Raw;
 
         --RemainingBlobsToWrite;
         if (RemainingBlobsToWrite == 0) {
@@ -266,6 +282,27 @@ private:
             request->Record.AddBlobIds()->Swap(blob.MutableBlobId());
         }
         request->Record.SetCommitId(GenerateBlobIdsResponse.GetCommitId());
+        request->Record.MutableStorageStatusFlags()->Reserve(
+            StorageStatusFlags.size());
+        for (const auto flags: StorageStatusFlags) {
+            request->Record.AddStorageStatusFlags(flags);
+        }
+
+        if (Range.Offset < BlobRange.Offset) {
+            auto& unalignedHead = *request->Record.AddUnalignedDataRanges();
+            unalignedHead.SetOffset(Range.Offset);
+            unalignedHead.SetContent(WriteRequest.GetBuffer().substr(
+                0,
+                BlobRange.Offset - Range.Offset));
+        }
+
+        if (Range.End() > BlobRange.End()) {
+            auto& unalignedTail = *request->Record.AddUnalignedDataRanges();
+            unalignedTail.SetOffset(BlobRange.End());
+            unalignedTail.SetContent(WriteRequest.GetBuffer().substr(
+                BlobRange.End() - Range.Offset,
+                Range.End() - BlobRange.End()));
+        }
 
         RequestInfo->CallContext->RequestType = EFileStoreRequest::AddData;
         InFlightRequest.ConstructInPlace(
@@ -435,13 +472,16 @@ void TStorageServiceActor::HandleWriteData(
 
     ui32 blockSize = filestore.GetBlockSize();
 
-    // TODO(debnatkh): Consider supporting unaligned writes
-    if (filestore.GetFeatures().GetThreeStageWriteEnabled() &&
-        msg->Record.GetOffset() % blockSize == 0 &&
-        msg->Record.GetBuffer().Size() % blockSize == 0 &&
-        msg->Record.GetBuffer().Size() >=
-            filestore.GetFeatures().GetThreeStageWriteThreshold())
-    {
+    const TByteRange range(
+        msg->Record.GetOffset(),
+        msg->Record.GetBuffer().Size(),
+        blockSize);
+    const bool threeStageWriteEnabled =
+        range.Length >= filestore.GetFeatures().GetThreeStageWriteThreshold()
+        && filestore.GetFeatures().GetThreeStageWriteEnabled()
+        && (range.IsAligned()
+                || StorageConfig->GetUnalignedThreeStageWriteEnabled());
+    if (threeStageWriteEnabled) {
         LOG_DEBUG(
             ctx,
             TFileStoreComponents::SERVICE,
@@ -461,6 +501,7 @@ void TStorageServiceActor::HandleWriteData(
 
         auto actor = std::make_unique<TWriteDataActor>(
             std::move(msg->Record),
+            range,
             std::move(requestInfo),
             filestore.GetFileSystemId(),
             session->RequestStats,

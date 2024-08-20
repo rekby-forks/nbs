@@ -191,6 +191,7 @@ public:
     bool GetTwoStageReadEnabled() const;
     bool GetThreeStageWriteEnabled() const;
     ui32 GetThreeStageWriteThreshold() const;
+    bool GetUnalignedThreeStageWriteEnabled() const;
     TDuration GetEntryTimeout() const;
     TDuration GetNegativeEntryTimeout() const;
     TDuration GetAttrTimeout() const;
@@ -223,6 +224,8 @@ public:
 
     ui64 GetTrimBytesItemCount() const;
 
+    ui32 GetMaxZeroCompactionRangesToDeletePerTx() const;
+
     void Dump(IOutputStream& out) const;
     void DumpHtml(IOutputStream& out) const;
     void DumpOverridesHtml(IOutputStream& out) const;
@@ -238,6 +241,9 @@ public:
     ui32 GetNonNetworkMetricsBalancingFactor() const;
 
     const NProto::TStorageConfig& GetStorageConfigProto() const;
+
+    const NProto::TStorageConfig::TFilestoreAliases& GetFilestoreAliases() const;
+    const TString* FindFileSystemIdByAlias(const TString& alias) const;
 };
 
 }   // namespace NCloud::NFileStore::NStorage
