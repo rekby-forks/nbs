@@ -329,10 +329,6 @@ message TStorageConfig
 
     // Number of ranges with zero compaction stats to delete per tx.
     optional uint32 MaxZeroCompactionRangesToDeletePerTx = 367;
-    
-    // Used to send non-network metrics as network ones to HIVE,
-    // while we use them for load balancing
-    optional uint32 NonNetworkMetricsBalancingFactor = 368;
 
     // Mapping allowing for multiple fs ids to point to the same fs
     message TFilestoreAliasEntry
@@ -345,4 +341,8 @@ message TStorageConfig
         repeated TFilestoreAliasEntry Entries = 1;
     }
     optional TFilestoreAliases FilestoreAliases = 368;
+
+    // Used to send non-network metrics as network ones to HIVE,
+    // while we use them for load balancing
+    optional uint32 NonNetworkMetricsBalancingFactor = 369;
 }
