@@ -235,6 +235,8 @@ public:
     ui32 GetBlobCompressionRate() const;
     TString GetBlobCompressionCodec() const;
 
+    ui32 GetNonNetworkMetricsBalancingFactor() const;
+
     const NProto::TStorageConfig& GetStorageConfigProto() const;
 };
 

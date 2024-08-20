@@ -323,4 +323,7 @@ message TStorageConfig
     // Blob compression experiment params.
     optional uint32 BlobCompressionRate = 364;
     optional string BlobCompressionCodec = 365;
+
+    // Used to send non-network metrics as network ones to HIVE for load balancing
+    optional uint32 NonNetworkMetricsBalancingFactor = 366;
 }
