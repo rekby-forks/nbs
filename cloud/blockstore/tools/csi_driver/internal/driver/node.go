@@ -422,6 +422,7 @@ func (s *nodeService) startNbsEndpoint(
 	}
 
 	hostType := nbsapi.EHostType_HOST_TYPE_DEFAULT
+
 	return s.nbsClient.StartEndpoint(ctx, &nbsapi.TStartEndpointRequest{
 		UnixSocketPath:   filepath.Join(endpointDir, nbsSocketName),
 		DiskId:           volumeId,
@@ -852,15 +853,16 @@ func (s *nodeService) NodeExpandVolume(
 	}
 
 	endpointDir := filepath.Join(s.socketsDir, podId, req.VolumeId)
-
 	_, err = s.nbsClient.ResizeDevice(ctx, &nbsapi.TResizeDeviceRequest{
-		UnixSocketPath:    filepath.Join(endpointDir, nfsSocketName),
+		UnixSocketPath:    filepath.Join(endpointDir, nbsSocketName),
 		DeviceSizeInBytes: newBlocksCount * uint64(resp.Volume.BlockSize),
 	})
 
 	if err != nil {
 		log.Printf("Resize device failed %v", err)
-		return nil, err
+		return nil, s.statusErrorf(
+			codes.Internal,
+			"Failed to resize filesystem %v", err)
 	}
 
 	cmd := exec.Command("resize2fs", nbdDevicePath)
