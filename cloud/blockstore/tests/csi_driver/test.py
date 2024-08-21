@@ -47,9 +47,13 @@ class CsiLoadTest(LocalLoadTest):
         self.sockets_temporary_directory.cleanup()
 
 
-def init():
+def init(enableNetlink=True):
     server_config_patch = TServerConfig()
     server_config_patch.NbdEnabled = True
+    if enableNetlink:
+        server_config_patch.NbdNetlink = True
+        server_config_patch.NbdRequestTimeout = 120
+        server_config_patch.NbdConnectionTimeout = 120
     endpoints_dir = Path(common.output_path()) / f"endpoints-{hash(common.context.test_name)}"
     endpoints_dir.mkdir(exist_ok=True)
     server_config_patch.EndpointStorageType = EEndpointStorageType.ENDPOINT_STORAGE_FILE
