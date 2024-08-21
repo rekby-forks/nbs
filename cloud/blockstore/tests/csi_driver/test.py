@@ -341,13 +341,11 @@ def test_nbs_csi_driver_volume_stat():
 
 def test_csi_sanity_nbs_backend():
     env, run = init()
-    podId = "123"
-    nodeId = "456"
     backend = "nbs"
 
     try:
         CSI_SANITY_BINARY_PATH = common.binary_path("cloud/blockstore/tools/testing/csi-sanity/bin/csi-sanity")
-        mount_dir = Path("/var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices/publish") / podId
+        mount_dir = Path("/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/456")
         mount_dir.mkdir(parents=True, exist_ok=True)
 
         params_file = Path(os.getcwd()) / "params.yaml"
@@ -359,11 +357,11 @@ def test_csi_sanity_nbs_backend():
                 "-csi.endpoint",
                 env.csi._endpoint,
                 "--csi.mountdir",
-                mount_dir / nodeId,
+                mount_dir / "mount",
                 "-csi.testvolumeparameters",
                 params_file,
                 "-csi.testvolumeaccesstype",
-                "block",
+                "mount",
                 "--ginkgo.skip",
                 '|'.join(skipTests)]
         subprocess.run(
