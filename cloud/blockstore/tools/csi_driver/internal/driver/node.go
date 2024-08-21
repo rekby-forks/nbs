@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"syscall"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	nbsapi "github.com/ydb-platform/nbs/cloud/blockstore/public/api/protos"
@@ -847,20 +846,21 @@ func (s *nodeService) NodeExpandVolume(
 		return nil, err
 	}
 
-	nbdDevice, err := os.OpenFile(nbdDevicePath, os.O_CREATE|os.O_RDWR, 0644)
+	podId, _, err := s.parseFsTargetPath(req.VolumePath)
 	if err != nil {
-		log.Printf("Open nbd device failed %v", err)
 		return nil, err
 	}
-	defer nbdDevice.Close()
 
-	NBD_SET_SIZE := uintptr(43778)
-	_, _, err = syscall.Syscall(syscall.SYS_IOCTL, uintptr(nbdDevice.Fd()),
-		NBD_SET_SIZE, uintptr(newBlocksCount*uint64(resp.Volume.BlockSize)))
-	if errno, ok := err.(syscall.Errno); errno != 0 && ok {
-		return nil, s.statusErrorf(
-			codes.Internal,
-			"Failed to set NBD_SET_SIZE %v", err)
+	endpointDir := filepath.Join(s.socketsDir, podId, req.VolumeId)
+
+	_, err = s.nbsClient.ResizeDevice(ctx, &nbsapi.TResizeDeviceRequest{
+		UnixSocketPath:    filepath.Join(endpointDir, nfsSocketName),
+		DeviceSizeInBytes: newBlocksCount * uint64(resp.Volume.BlockSize),
+	})
+
+	if err != nil {
+		log.Printf("Resize device failed %v", err)
+		return nil, err
 	}
 
 	cmd := exec.Command("resize2fs", nbdDevicePath)
