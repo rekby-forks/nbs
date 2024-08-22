@@ -250,3 +250,21 @@ func (s *legacyStorage) DeleteDiskFromIncremental(
 
 	return task_errors.NewNonRetriableErrorf("not implemented")
 }
+
+func (s *legacyStorage) LockSnapshot(
+	ctx context.Context,
+	snapshotID string,
+	lockTaskID string,
+) (locked bool, err error) {
+
+	return false, task_errors.NewNonRetriableErrorf("not implemented")
+}
+
+func (s *legacyStorage) UnlockSnapshot(
+	ctx context.Context,
+	snapshotID string,
+	lockTaskID string,
+) error {
+
+	return task_errors.NewNonRetriableErrorf("not implemented")
+}

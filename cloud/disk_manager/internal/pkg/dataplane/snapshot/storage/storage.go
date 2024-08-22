@@ -12,10 +12,11 @@ import (
 ////////////////////////////////////////////////////////////////////////////////
 
 type SnapshotMeta struct {
-	ID             string
-	Disk           *types.Disk
-	CheckpointID   string
-	BaseSnapshotID string
+	ID               string
+	Disk             *types.Disk
+	CheckpointID     string
+	BaseSnapshotID   string
+	BaseCheckpointID string
 	// Snapshot virtual size, i.e. the minimum amount of disk space needed to restore.
 	Size uint64
 	// Snapshot real size, i.e. the amount of disk space occupied in storage.
@@ -118,4 +119,12 @@ type Storage interface {
 		zoneID string,
 		diskID string,
 	) error
+
+	LockSnapshot(
+		ctx context.Context,
+		snapshotID string,
+		lockTaskID string,
+	) (locked bool, err error)
+
+	UnlockSnapshot(ctx context.Context, snapshotID string, lockTaskID string) error
 }

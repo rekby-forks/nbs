@@ -190,14 +190,6 @@ type Storage interface {
 
 	ClearDeletedSnapshots(ctx context.Context, deletedBefore time.Time, limit int) error
 
-	LockSnapshot(
-		ctx context.Context,
-		snapshotID string,
-		lockTaskID string,
-	) (locked bool, err error)
-
-	UnlockSnapshot(ctx context.Context, snapshotID string, lockTaskID string) error
-
 	// Lists all existing snapshot ids in specified |folderID|.
 	// Lists all existing snapshot ids if |folderID| is not set.
 	ListSnapshots(

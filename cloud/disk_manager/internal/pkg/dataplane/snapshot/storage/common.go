@@ -52,9 +52,11 @@ type snapshotState struct {
 	createdAt         time.Time
 	deletingAt        time.Time
 	baseSnapshotID    string
+	baseCheckpointID  string
 	size              uint64
 	storageSize       uint64
 	chunkCount        uint32
+	lockTaskID        string
 	encryptionMode    uint32
 	encryptionKeyHash []byte
 	status            snapshotStatus
@@ -85,9 +87,11 @@ func (s *snapshotState) structValue() persistence.Value {
 		persistence.StructFieldValue("created_at", persistence.TimestampValue(s.createdAt)),
 		persistence.StructFieldValue("deleting_at", persistence.TimestampValue(s.deletingAt)),
 		persistence.StructFieldValue("base_snapshot_id", persistence.UTF8Value(s.baseSnapshotID)),
+		persistence.StructFieldValue("base_checkpoint_id", persistence.UTF8Value(s.baseCheckpointID)),
 		persistence.StructFieldValue("size", persistence.Uint64Value(s.size)),
 		persistence.StructFieldValue("storage_size", persistence.Uint64Value(s.storageSize)),
 		persistence.StructFieldValue("chunk_count", persistence.Uint32Value(s.chunkCount)),
+		persistence.StructFieldValue("lock_task_id", persistence.UTF8Value(s.lockTaskID)),
 		persistence.StructFieldValue("encryption_mode", persistence.Uint32Value(s.encryptionMode)),
 		persistence.StructFieldValue("encryption_keyhash", persistence.StringValue(s.encryptionKeyHash)),
 		persistence.StructFieldValue("status", persistence.Int64Value(int64(s.status))),
@@ -104,9 +108,11 @@ func scanSnapshotState(res persistence.Result) (state snapshotState, err error) 
 		persistence.OptionalWithDefault("created_at", &state.createdAt),
 		persistence.OptionalWithDefault("deleting_at", &state.deletingAt),
 		persistence.OptionalWithDefault("base_snapshot_id", &state.baseSnapshotID),
+		persistence.OptionalWithDefault("base_checkpoint_id", &state.baseCheckpointID),
 		persistence.OptionalWithDefault("size", &state.size),
 		persistence.OptionalWithDefault("storage_size", &state.storageSize),
 		persistence.OptionalWithDefault("chunk_count", &state.chunkCount),
+		persistence.OptionalWithDefault("lock_task_id", &state.lockTaskID),
 		persistence.OptionalWithDefault("encryption_mode", &state.encryptionMode),
 		persistence.OptionalWithDefault("encryption_keyhash", &state.encryptionKeyHash),
 		persistence.OptionalWithDefault("status", &state.status),
@@ -147,9 +153,11 @@ func snapshotStateStructTypeString() string {
 		created_at: Timestamp,
 		deleting_at: Timestamp,
 		base_snapshot_id: Utf8,
+		base_checkpoint_id: Utf8,
 		size: Uint64,
 		storage_size: Uint64,
 		chunk_count: Uint32,
+		lock_task_id: Utf8,
 		encryption_mode: Uint32,
 		encryption_keyhash: String,
 		status: Int64>`

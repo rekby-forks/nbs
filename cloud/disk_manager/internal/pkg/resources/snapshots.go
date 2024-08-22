@@ -63,8 +63,8 @@ type snapshotState struct {
 	deleteTaskID      string
 	deletingAt        time.Time
 	deletedAt         time.Time
-	baseSnapshotID    string
-	baseCheckpointID  string
+	baseSnapshotID    string // todo remove
+	baseCheckpointID  string // todo remove
 	useDataplaneTasks bool
 	size              uint64
 	storageSize       uint64
@@ -276,67 +276,6 @@ func (s *storageYDB) snapshotExists(
 	return count != 0, nil
 }
 
-func (s *storageYDB) getIncremental(
-	ctx context.Context,
-	tx *persistence.Transaction,
-	disk *types.Disk,
-) (snapshotID string, checkpointID string, err error) {
-
-	res, err := tx.Execute(ctx, fmt.Sprintf(`
-		--!syntax_v1
-		pragma TablePathPrefix = "%v";
-		declare $zone_id as Utf8;
-		declare $disk_id as Utf8;
-
-		select *
-		from incremental
-		where zone_id = $zone_id and disk_id = $disk_id
-	`, s.snapshotsPath),
-		persistence.ValueParam("$zone_id", persistence.UTF8Value(disk.ZoneId)),
-		persistence.ValueParam("$disk_id", persistence.UTF8Value(disk.DiskId)),
-	)
-	if err != nil {
-		return "", "", err
-	}
-	defer res.Close()
-
-	for res.NextResultSet(ctx) {
-		for res.NextRow() {
-			err = res.ScanNamed(
-				persistence.OptionalWithDefault("snapshot_id", &snapshotID),
-				persistence.OptionalWithDefault("checkpoint_id", &checkpointID),
-			)
-			if err != nil {
-				return "", "", err
-			}
-		}
-	}
-
-	return
-}
-
-func (s *storageYDB) deleteDiskFromIncremental(
-	ctx context.Context,
-	tx *persistence.Transaction,
-	diskID string,
-	zoneID string,
-) error {
-
-	_, err := tx.Execute(ctx, fmt.Sprintf(`
-		--!syntax_v1
-		pragma TablePathPrefix = "%v";
-		declare $zone_id as Utf8;
-		declare $disk_id as Utf8;
-
-		delete from incremental
-		where zone_id = $zone_id and disk_id = $disk_id
-	`, s.snapshotsPath),
-		persistence.ValueParam("$zone_id", persistence.UTF8Value(zoneID)),
-		persistence.ValueParam("$disk_id", persistence.UTF8Value(diskID)),
-	)
-	return err
-}
-
 func (s *storageYDB) getSnapshotMeta(
 	ctx context.Context,
 	session *persistence.Session,
@@ -467,15 +406,6 @@ func (s *storageYDB) createSnapshot(
 		return nil, nil
 	}
 
-	baseSnapshotID, baseCheckpointID, err := s.getIncremental(
-		ctx,
-		tx,
-		snapshot.Disk,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	state := snapshotState{
 		id:                snapshot.ID,
 		folderID:          snapshot.FolderID,
@@ -486,8 +416,6 @@ func (s *storageYDB) createSnapshot(
 		createTaskID:      snapshot.CreateTaskID,
 		creatingAt:        snapshot.CreatingAt,
 		createdBy:         snapshot.CreatedBy,
-		baseSnapshotID:    baseSnapshotID,
-		baseCheckpointID:  baseCheckpointID,
 		useDataplaneTasks: snapshot.UseDataplaneTasks,
 
 		status: snapshotStatusCreating,
@@ -615,54 +543,6 @@ func (s *storageYDB) snapshotCreated(
 		return err
 	}
 
-	if len(state.baseSnapshotID) == 0 {
-		_, err := tx.Execute(ctx, fmt.Sprintf(`
-			--!syntax_v1
-			pragma TablePathPrefix = "%v";
-			declare $zone_id as Utf8;
-			declare $disk_id as Utf8;
-			declare $snapshot_id as Utf8;
-			declare $checkpoint_id as Utf8;
-
-			upsert into incremental (zone_id, disk_id, snapshot_id, checkpoint_id)
-			values ($zone_id, $disk_id, $snapshot_id, $checkpoint_id)
-		`, s.snapshotsPath),
-			persistence.ValueParam("$zone_id", persistence.UTF8Value(state.zoneID)),
-			persistence.ValueParam("$disk_id", persistence.UTF8Value(state.diskID)),
-			persistence.ValueParam("$snapshot_id", persistence.UTF8Value(snapshotID)),
-			persistence.ValueParam("$checkpoint_id", persistence.UTF8Value(state.checkpointID)),
-		)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Remove previous incremental snapshot and insert new one instead.
-		_, err := tx.Execute(ctx, fmt.Sprintf(`
-			--!syntax_v1
-			pragma TablePathPrefix = "%v";
-			declare $zone_id as Utf8;
-			declare $disk_id as Utf8;
-			declare $snapshot_id as Utf8;
-			declare $checkpoint_id as Utf8;
-			declare $base_snapshot_id as Utf8;
-
-			delete from incremental
-			where zone_id = $zone_id and disk_id = $disk_id and snapshot_id = $base_snapshot_id;
-
-			upsert into incremental (zone_id, disk_id, snapshot_id, checkpoint_id)
-			values ($zone_id, $disk_id, $snapshot_id, $checkpoint_id)
-		`, s.snapshotsPath),
-			persistence.ValueParam("$zone_id", persistence.UTF8Value(state.zoneID)),
-			persistence.ValueParam("$disk_id", persistence.UTF8Value(state.diskID)),
-			persistence.ValueParam("$snapshot_id", persistence.UTF8Value(snapshotID)),
-			persistence.ValueParam("$checkpoint_id", persistence.UTF8Value(state.checkpointID)),
-			persistence.ValueParam("$base_snapshot_id", persistence.UTF8Value(state.baseSnapshotID)),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
 	return tx.Commit(ctx)
 }
 
@@ -769,24 +649,6 @@ func (s *storageYDB) deleteSnapshot(
 		from AS_TABLE($states)
 	`, s.snapshotsPath, snapshotStateStructTypeString()),
 		persistence.ValueParam("$states", persistence.ListValue(state.structValue())),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = tx.Execute(ctx, fmt.Sprintf(`
-		--!syntax_v1
-		pragma TablePathPrefix = "%v";
-		declare $zone_id as Utf8;
-		declare $disk_id as Utf8;
-		declare $snapshot_id as Utf8;
-
-		delete from incremental
-		where zone_id = $zone_id and disk_id = $disk_id and snapshot_id = $snapshot_id
-	`, s.snapshotsPath),
-		persistence.ValueParam("$zone_id", persistence.UTF8Value(state.zoneID)),
-		persistence.ValueParam("$disk_id", persistence.UTF8Value(state.diskID)),
-		persistence.ValueParam("$snapshot_id", persistence.UTF8Value(snapshotID)),
 	)
 	if err != nil {
 		return nil, err

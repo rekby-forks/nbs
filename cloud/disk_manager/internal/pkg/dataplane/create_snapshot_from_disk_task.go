@@ -12,6 +12,7 @@ import (
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/dataplane/snapshot"
 	"github.com/ydb-platform/nbs/cloud/disk_manager/internal/pkg/dataplane/snapshot/storage"
 	"github.com/ydb-platform/nbs/cloud/tasks"
+	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,6 +57,24 @@ func (t *createSnapshotFromDiskTask) Cancel(
 	ctx context.Context,
 	execCtx tasks.ExecutionContext,
 ) error {
+
+	// NBS-3192.
+	// if len(snapshotMeta.BaseSnapshotID) != 0 {
+	// 	err := t.storage.UnlockSnapshot(
+	// 		ctx,
+	// 		snapshotMeta.BaseSnapshotID,
+	// 		selfTaskID,
+	// 	)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+
+	// 	logging.Info(
+	// 		ctx,
+	// 		"Successfully unlocked snapshot with id %v",
+	// 		snapshotMeta.BaseSnapshotID,
+	// 	)
+	// }
 
 	err := t.deleteProxyOverlayDiskIfNeeded(ctx)
 	if err != nil {
@@ -111,10 +130,9 @@ func (t *createSnapshotFromDiskTask) run(
 	snapshotMeta, err := t.storage.CreateSnapshot(
 		ctx,
 		storage.SnapshotMeta{
-			ID:             t.request.DstSnapshotId,
-			Disk:           t.request.SrcDisk,
-			CheckpointID:   t.request.SrcDiskCheckpointId,
-			BaseSnapshotID: t.request.BaseSnapshotId,
+			ID:           t.request.DstSnapshotId,
+			Disk:         t.request.SrcDisk,
+			CheckpointID: t.request.SrcDiskCheckpointId,
 		},
 	)
 	if err != nil {
@@ -124,6 +142,56 @@ func (t *createSnapshotFromDiskTask) run(
 	if snapshotMeta.Ready {
 		// Already created.
 		return nil
+	}
+
+	nbsClient, err := t.nbsFactory.GetClient(ctx, t.request.SrcDisk.ZoneId)
+	if err != nil {
+		return err
+	}
+
+	diskParams, err := nbsClient.Describe(ctx, t.request.SrcDisk.DiskId)
+	if err != nil {
+		return err
+	}
+
+	baseSnapshotID := snapshotMeta.BaseSnapshotID
+	baseCheckpointID := snapshotMeta.BaseCheckpointID
+
+	if diskParams.IsDiskRegistryBasedDisk {
+		// Should perform full snapshot of disk.
+		// TODO: enable incremental snapshots for such disks.
+		baseSnapshotID = ""
+		baseCheckpointID = ""
+	}
+
+	if len(baseSnapshotID) != 0 {
+		// Lock base snapshot to prevent deletion.
+		locked, err := t.storage.LockSnapshot(
+			ctx,
+			snapshotMeta.BaseSnapshotID,
+			selfTaskID,
+		)
+		if err != nil {
+			return err
+		}
+
+		if locked {
+			logging.Info(
+				ctx,
+				"Successfully locked snapshot with id %v",
+				snapshotMeta.BaseSnapshotID,
+			)
+		} else {
+			logging.Info(
+				ctx,
+				"Snapshot with id %v can't be locked",
+				snapshotMeta.BaseSnapshotID,
+			)
+
+			// Should perform full snapshot of disk.
+			baseSnapshotID = ""
+			baseCheckpointID = ""
+		}
 	}
 
 	client, err := t.nbsFactory.GetClient(ctx, t.request.SrcDisk.ZoneId)
@@ -140,20 +208,15 @@ func (t *createSnapshotFromDiskTask) run(
 		return err
 	}
 
-	diskParams, err := client.Describe(ctx, t.request.SrcDisk.DiskId)
-	if err != nil {
-		return err
-	}
-
-	incremental := len(t.request.BaseSnapshotId) != 0
+	incremental := len(baseSnapshotID) != 0
 
 	source, err := nbs.NewDiskSource(
 		ctx,
 		client,
 		t.request.SrcDisk.DiskId,
 		proxyOverlayDiskID,
-		t.request.SrcDiskBaseCheckpointId,
-		t.request.SrcDiskCheckpointId,
+		baseSnapshotID,
+		baseCheckpointID,
 		diskParams.EncryptionDesc,
 		chunkSize,
 		incremental, // duplicateChunkIndices
@@ -265,6 +328,34 @@ func (t *createSnapshotFromDiskTask) run(
 	err = execCtx.SaveState(ctx)
 	if err != nil {
 		return err
+	}
+
+	if len(snapshotMeta.BaseSnapshotID) != 0 {
+		err := t.storage.UnlockSnapshot(
+			ctx,
+			snapshotMeta.BaseSnapshotID,
+			selfTaskID,
+		)
+		if err != nil {
+			return err
+		}
+
+		logging.Info(
+			ctx,
+			"Successfully unlocked snapshot with id %v",
+			snapshotMeta.BaseSnapshotID,
+		)
+	}
+
+	if len(snapshotMeta.BaseSnapshotID) != 0 {
+		err = nbsClient.DeleteCheckpoint(
+			ctx,
+			t.request.SrcDisk.DiskId,
+			snapshotMeta.BaseCheckpointID,
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	return t.storage.SnapshotCreated(

@@ -13,7 +13,6 @@ import (
 	"github.com/ydb-platform/nbs/cloud/tasks"
 	"github.com/ydb-platform/nbs/cloud/tasks/errors"
 	"github.com/ydb-platform/nbs/cloud/tasks/headers"
-	"github.com/ydb-platform/nbs/cloud/tasks/logging"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,22 +65,22 @@ func (t *deleteSnapshotTask) deleteSnapshot(
 	}
 
 	// NBS-3535.
-	if snapshotMeta.UseDataplaneTasks && len(snapshotMeta.BaseSnapshotID) != 0 {
-		err := t.storage.UnlockSnapshot(
-			ctx,
-			snapshotMeta.BaseSnapshotID,
-			snapshotMeta.CreateTaskID,
-		)
-		if err != nil {
-			return err
-		}
+	// if snapshotMeta.UseDataplaneTasks && len(snapshotMeta.BaseSnapshotID) != 0 {
+	// 	err := t.storage.UnlockSnapshot(
+	// 		ctx,
+	// 		snapshotMeta.BaseSnapshotID,
+	// 		snapshotMeta.CreateTaskID,
+	// 	)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		logging.Info(
-			ctx,
-			"Successfully unlocked snapshot with id %v",
-			snapshotMeta.BaseSnapshotID,
-		)
-	}
+	// 	logging.Info(
+	// 		ctx,
+	// 		"Successfully unlocked snapshot with id %v",
+	// 		snapshotMeta.BaseSnapshotID,
+	// 	)
+	// }
 
 	if len(snapshotMeta.CheckpointID) != 0 {
 		nbsClient, err := t.nbsFactory.GetClient(ctx, snapshotMeta.Disk.ZoneId)
