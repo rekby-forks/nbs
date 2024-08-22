@@ -1000,4 +1000,7 @@ message TStorageServiceConfig
 
     // Allow destruction only for those disks whose ids match a specific prefix.
     optional string DestructionAllowedOnlyForDisksWithIdPrefix = 374;
+
+    // IAM container for the New IAM implementation
+    optional string IamContainerId = 375;
 }

@@ -159,6 +159,7 @@ IActorPtr CreateAuthorizerActor(
         AuthrorizerComponentId,
         TString("blockstorefilestore"),
         std::move(folderId),
+        TString(""),
         mode,
         checkAuthorization);
 }

@@ -156,11 +156,15 @@ bool PermissionsMatch(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TVector<std::pair<TString, TString>> BuildAttributes(const TString& folderId)
-{
+TVector<std::pair<TString, TString>> BuildAttributes(
+    const TString& folderId,
+    const TString& containerId) {
     TVector<std::pair<TString, TString>> result;
     if (const auto& value = folderId) {
         result.emplace_back("folder_id", value);
+    }
+    if (const auto& value = containerId) {
+        result.emplace_back("container_id", value);
     }
     result.emplace_back("database_id", DatabaseId);
     return result;
@@ -288,6 +292,7 @@ private:
     const int Component;
     const TString CounterId;
     const TString FolderId;
+    const TString ContainerId;
     const NProto::EAuthorizationMode AuthMode;
     const bool CheckAuthorization;
     TAuthCountersPtr Counters;
@@ -297,11 +302,13 @@ public:
             int component,
             TString counterId,
             TString folderId,
+            TString containerId,
             NProto::EAuthorizationMode authMode,
             bool checkAuthorization)
         : Component(component)
         , CounterId(std::move(counterId))
         , FolderId(std::move(folderId))
+        , ContainerId(std::move(containerId))
         , AuthMode(authMode)
         , CheckAuthorization(checkAuthorization)
     {}
@@ -409,9 +416,9 @@ private:
             return;
         }
 
-        if (FolderId.empty()) {
+        if (FolderId.empty() && ContainerId.empty()) {
             LOG_ERROR_S(ctx, Component,
-                "Authorization is enabled but FolderId is not set on server");
+                "Authorization is enabled but both FolderId and ContainerId are not set on server");
 
             Counters->ReportAuthorizationStatus(
                 EAuthorizationStatus::PermissionsDeniedWithoutFolderId);
@@ -429,7 +436,7 @@ private:
                 requestId,
                 msg->Token,
                 GetPermissionStrings(msg->Permissions),
-                BuildAttributes(FolderId),
+                BuildAttributes(FolderId, ContainerId),
                 IEventHandlePtr(ev.Release()),
                 Counters));
     }
@@ -443,6 +450,7 @@ IActorPtr CreateAuthorizerActor(
     int component,
     TString counterId,
     TString folderId,
+    TString containerId,
     NProto::EAuthorizationMode authMode,
     bool checkAuthorization)
 {
@@ -450,6 +458,7 @@ IActorPtr CreateAuthorizerActor(
         component,
         std::move(counterId),
         std::move(folderId),
+        std::move(containerId),
         authMode,
         checkAuthorization);
 }

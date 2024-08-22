@@ -584,6 +584,7 @@ public:
 
     ui32 GetVolumeHistoryCleanupItemCount() const;
     TString GetDestructionAllowedOnlyForDisksWithIdPrefix() const;
+    TString GetIamContainerId() const;
 };
 
 ui64 GetAllocationUnit(

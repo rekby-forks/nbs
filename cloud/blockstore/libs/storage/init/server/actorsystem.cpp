@@ -256,11 +256,11 @@ public:
         //
         // Authorizer
         //
-
         auto authorizer = CreateAuthorizerActor(
             TBlockStoreComponents::AUTH,
             "blockstore",
             Args.StorageConfig->GetFolderId(),
+            Args.StorageConfig->GetIamContainerId(),
             Args.StorageConfig->GetAuthorizationMode(),
             Args.AppConfig->HasAuthConfig());
 

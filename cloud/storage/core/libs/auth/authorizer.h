@@ -14,6 +14,7 @@ NActors::IActorPtr CreateAuthorizerActor(
     int component,
     TString counterId,
     TString folderId,
+    TString containerId,
     NProto::EAuthorizationMode authMode,
     bool checkAuthorization);
 
