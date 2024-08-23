@@ -23,7 +23,8 @@ var endpointPickerCheckPeriod = 5 * time.Second
 type endpointPicker struct {
 	endpoints        []string
 	healthyEndpoints []string
-	mutex            sync.RWMutex
+	mutex            sync.Mutex
+	markedAsHealthy  common.Cond
 }
 
 func newEndpointPicker(
@@ -31,13 +32,10 @@ func newEndpointPicker(
 	endpoints []string,
 ) *endpointPicker {
 
-	healthyEndpoints := make([]string, len(endpoints))
-	copy(healthyEndpoints, endpoints)
-
 	p := &endpointPicker{
-		endpoints:        endpoints,
-		healthyEndpoints: healthyEndpoints,
+		endpoints: endpoints,
 	}
+	p.markedAsHealthy = common.NewCond(&p.mutex)
 
 	go func() {
 		ticker := time.NewTicker(endpointPickerCheckPeriod)
@@ -47,7 +45,7 @@ func newEndpointPicker(
 			select {
 			case <-ticker.C:
 				for _, endpoint := range endpoints {
-					p.checkEndpoint(ctx, endpoint)
+					p.checkHealth(ctx, endpoint)
 				}
 			case <-ctx.Done():
 				return
@@ -57,7 +55,7 @@ func newEndpointPicker(
 	return p
 }
 
-func (p *endpointPicker) checkEndpoint(ctx context.Context, endpoint string) {
+func (p *endpointPicker) checkHealth(ctx context.Context, endpoint string) {
 	client, err := nfs_client.NewGrpcEndpointClient(
 		&nfs_client.GrpcClientOpts{
 			Endpoint: endpoint,
@@ -94,17 +92,20 @@ func (p *endpointPicker) markAsHealthy(endpoint string) {
 
 	if !common.Find(p.healthyEndpoints, endpoint) {
 		p.healthyEndpoints = append(p.healthyEndpoints, endpoint)
+		p.markedAsHealthy.Signal()
 	}
 }
 
-func (p *endpointPicker) pickEndpoint() string {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+func (p *endpointPicker) pickEndpoint(ctx context.Context) (string, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 
-	endpoints := p.healthyEndpoints
-	if len(endpoints) == 0 {
-		endpoints = p.endpoints
+	for len(p.healthyEndpoints) == 0 {
+		err := p.markedAsHealthy.Wait(ctx)
+		if err != nil {
+			return "", err
+		}
 	}
 
-	return common.RandomElement(endpoints)
+	return common.RandomElement(p.healthyEndpoints), nil
 }
